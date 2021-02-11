@@ -11,6 +11,12 @@ ESP32 Muse is a commercial product that can be purchase here: https://raspiaudio
 - Microphone
 - Low battery sensor
 
+#  To compile
+- Select Tool-Board-ESP32 dev Module
+- Partition "Huge app"
+- Select Toll-ESP32 Sketch data upload this will upload the wav files use by the programmable
+- Upload
+
 #  To be done
 - Self test for the factory
 - Low battery warning
