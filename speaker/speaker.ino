@@ -53,7 +53,14 @@ extern "C"
 #include "esp_avrc_api.h"
 #include "SPIFFS.h"
 
+
+//#define muse 1
+
+
+////////////////////////////////
 // Digital I/O used
+///////////////////////////////
+//SPI I2S I2C
 #define SD_CS         13
 #define SPI_MOSI      15
 #define SPI_MISO      2
@@ -66,17 +73,31 @@ extern "C"
 #define SDA 18
 #define SCL 23
 
+//Contacts
+#define PA      GPIO_NUM_21      // Amp power ON
 
-#define MD GPIO_NUM_36      // Mode => mode
-#define MU GPIO_NUM_19      // Rec  => pause
-#define VM GPIO_NUM_12      // Play => vol-
-#define VP GPIO_NUM_32      // Vol+ => vol +
-#define FW GPIO_NUM_39      // Set  => forward
+#ifdef muse
+#define AUXD    GPIO_NUM_27      // AUX In detect 27
+#else
+#define AUXD    GPIO_NUM_12
+#endif
+#define SDD     GPIO_NUM_34      // Sd detect
 
-#define AUXD GPIO_NUM_27        // AUX In detect 27
-#define HPD GPIO_NUM_27     // Head Phone detect
-#define SDD   GPIO_NUM_34   // Sd detect
-#define PA GPIO_NUM_21      // Amp power ON
+//Buttons
+
+#ifdef muse
+#define MU GPIO_NUM_19      // Pause/Play
+#define VM GPIO_NUM_12      // Vol-
+#define VP GPIO_NUM_32      // Vol+ 
+#else
+#define MU GPIO_NUM_19    // Pause/Play
+#define VM GPIO_NUM_36     // Vol-
+#define VP GPIO_NUM_39      // Vol+ 
+///////////// bidon en attendant.....
+#define FW MU
+
+#endif
+
 
 #define maxMode 3
 #define btM 0
@@ -237,16 +258,6 @@ void modeCall(void)
 }
 
 ///////////////////////////////////////////////////////////////////////
-// touch button value
-///////////////////////////////////////////////////////////////////////
-int touch_get_level(int t)
-{
-#define threshold 30
-  if (((touchRead(t) + touchRead(t) + touchRead(t) + touchRead(t)) >> 2) > threshold) return 0;
-  else return 1;
-}
-
-///////////////////////////////////////////////////////////////////////
 // Write ES8388 register
 ///////////////////////////////////////////////////////////////////////
 void ES8388_Write_Reg(uint8_t reg, uint8_t val)
@@ -318,7 +329,12 @@ void ES8388vol_Set(uint8_t volx)
 ////////////////////////////////////////////////////////////////////
 void ES8388_Init(void)
 {
-  //hal_i2c_init(0,SDA,SCL);
+
+#ifndef muse  
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
+  WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
+#endif
+  
   hal_i2s_init(I2SN, I2S_DOUT, I2S_LRC, I2S_BCLK, I2S_DIN, 2);
 
   // reset
@@ -575,7 +591,6 @@ void setup()
 {
   Serial.begin(115200);
   hal_i2c_init(0, SDA, SCL);
-
   esp_err_t err;
   err = nvs_flash_init();
   if (err != ESP_OK) printf("nvs flash error...\n");
@@ -593,21 +608,13 @@ void setup()
   ///////////////////////////////////////////
   // init GPIO pins
   /////////////////////////////////////////////
-  // mode
-  gpio_reset_pin(MD);
-  gpio_set_direction(MD, GPIO_MODE_INPUT);
-  gpio_set_pull_mode(MD, GPIO_PULLUP_ONLY);
-  vmode = 0;
+ 
 
   // power enable
   gpio_reset_pin(PA);
   gpio_set_direction(PA, GPIO_MODE_OUTPUT);
 
-  // jack detect
-  gpio_reset_pin(HPD);
-  gpio_set_direction(HPD, GPIO_MODE_INPUT);
-  gpio_set_pull_mode(HPD, GPIO_PULLUP_ONLY);
-
+ 
   //VP
   gpio_reset_pin(VP);
   gpio_set_direction(VP, GPIO_MODE_INPUT);
@@ -702,8 +709,8 @@ void loop() {
   // volume change
   //
   oldVol = vol;
-  vol = vol + 4 * inc(touch_get_level(VP), &vplus);
-  vol = vol - 4 * inc(touch_get_level(VM), &vmoins);
+  vol = vol + 4 * inc(gpio_get_level(VP), &vplus);
+  vol = vol - 4 * inc(gpio_get_level(VM), &vmoins);
   if (vol > maxVol) vol = maxVol;
   if (vol < 0) vol = 0;
   if (vol != oldVol) {
@@ -711,28 +718,6 @@ void loop() {
     ES8388vol_Set(vol);
   }
 
-  // mode change
-  //
-  int deltaMode;
-  deltaMode = inc(gpio_get_level(MD), &vmode);
-  if (deltaMode == 1)
-  {
-    mode = mode + deltaMode;
-    if ((mode == sdM) && (vsdd == 1))mode++;
-    if ((mode == auxM) && (vauxd == 1))mode++;
-    if (mode == maxMode) mode = btM;
-    beep();
-    modeCall();
-    if ((mode == sdM) && (sdON == false)) {
-      xTaskCreate(sd, "playlist", 5000, NULL, 1, NULL);
-      sdON = true;
-    }
-    if ((mode == auxM) && (auxON == false)) {
-      xTaskCreate(aux, "aux", 5000, NULL, 1, NULL);
-      auxON = true;
-    }
-  }
-  //
 
 
   // mute / unmute (pause/run for SD)
@@ -763,7 +748,7 @@ void loop() {
   }
 
   // forward     (for SD)
-  if ((inc(touch_get_level(FW), &vfwd) == 1) && (mode == sdM)) {
+  if ((inc(gpio_get_level(FW), &vfwd) == 1) && (mode == sdM)) {
     beep();
     dofwd = true;
   }
@@ -801,11 +786,7 @@ void loop() {
     modeCall();
   }
 
-  // headphone detect
-  if (gpio_get_level(HPD) == 0) gpio_set_level(PA, 0); else gpio_set_level(PA, 1);
-
-  //  printf("SD %d  AUX %d  HPD %d\n",vsdd,vauxd,gpio_get_level(HPD));
-
+ 
 
   /*
         int volp;
