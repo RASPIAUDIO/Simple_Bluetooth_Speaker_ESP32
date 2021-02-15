@@ -90,8 +90,8 @@ extern "C"
 #define VM GPIO_NUM_12      // Vol-
 #define VP GPIO_NUM_32      // Vol+ 
 #else
-#define MU GPIO_NUM_19    // Pause/Play
-#define VM GPIO_NUM_36     // Vol-
+#define MU GPIO_NUM_3       // Pause/Play
+#define VM GPIO_NUM_36      // Vol-
 #define VP GPIO_NUM_39      // Vol+ 
 ///////////// bidon en attendant.....
 #define FW MU
@@ -107,9 +107,11 @@ extern "C"
 
 uint8_t vplus = 0, vmoins = 0, vmode = 0;
 uint8_t vmute = 0;
+int b0 = -1,b1 = -1,b2 = -1;
 bool mute = false;
 uint8_t vfwd = 0;
 bool dofwd = false;
+bool dobck = false;
 uint8_t  vauxd, vsdd;
 
 int vol, oldVol;
@@ -330,10 +332,10 @@ void ES8388vol_Set(uint8_t volx)
 void ES8388_Init(void)
 {
 
-#ifndef muse  
+ // provides MCLK
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
   WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
-#endif
+
   
   hal_i2s_init(I2SN, I2S_DOUT, I2S_LRC, I2S_BCLK, I2S_DIN, 2);
 
@@ -414,54 +416,135 @@ static void aux (void* data)
 ////////////////////////////////////////////////////////////////////
 static void sd(void* pdata)
 {
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-  delay(500);
-  if (!SD.begin(SD_CS))printf("init. SD failed !\n");
-  audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+   static int N;
+    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+    delay(500);
+    if(!SD.begin(SD_CS))printf("init. SD failed !\n");
+    audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    
+    root = SD.open("/");
+    file = root.openNextFile();
 
-  root = SD.open("/");
-  file = root.openNextFile();
-
-  Serial.println("nom du fichier");
-  Serial.println(file.name());
-
-  audio.connecttoSD(file.name());
-  audio.setVolume(21);
-  mp3ON = true;
-  while (1)
-  {
-    if (mp3ON == false)
+    Serial.println("nom du fichier");
+    Serial.println(file.name());
+    
+    audio.connecttoSD(file.name());
+    audio.setVolume(vol);               
+    mp3ON = true;
+    N = 0;
+    while(1)
     {
-      mp3ON = true;
-      file = root.openNextFile();
-      if (file)
-      {
-        Serial.println(file.name());
-        audio.connecttoSD(file.name());
-      }
-    }
-    if (dofwd == true)
-    {
-      audio.stopSong();
-      file = root.openNextFile();
-      if (file)
-      {
-        Serial.println(file.name());
-        audio.connecttoSD(file.name());
-      }
-      dofwd = false;
-    }
+//////////////////////////////////////////      
+// next file  
+/////////////////////////////    
+       if(mp3ON == false)
+       { 
+           mp3ON = true;
+           file = root.openNextFile(); 
+           if(file)
+           {
+              N++;
+              Serial.println(file.name());
+              audio.connecttoSD(file.name());
+           }
+           else
+           {
+// playing list end 
+// restart at the first song
+              root.rewindDirectory();
+              file = root.openNextFile();
+              if(file)
+              {
+              N = 0;
+              Serial.println(file.name());            
+              audio.connecttoSD(file.name());   
+              }  
+              else
+              {
+// error SD mode stopped                
+              sdON = 0;
+              audio.stopSong();
+              SPI.end();
+              SD.end();
+              vTaskDelete(NULL);        
+              }
+           }
+        } 
+/////////////////////////////////////
+//Forward  
+//////////////////////////////////      
+        if(dofwd == true)
+        {
+          audio.stopSong();
+          file = root.openNextFile();
+          if(file)
+           {
+              N++;
+              printf("%d\n",N);
+              Serial.println(file.name());
+              audio.connecttoSD(file.name());
+           }
+           else
+           {
+// playing list end 
+// restart at the first song             
+              root.rewindDirectory();
+              file = root.openNextFile();
+              if(file)
+              {
+              N = 0;
+              Serial.println(file.name());            
+              audio.connecttoSD(file.name());   
+              }  
+              else
+              {
+// error SD mode stopped                   
+              sdON = 0;
+              audio.stopSong();
+              SPI.end();
+              SD.end();
+              vTaskDelete(NULL);        
+              }       
+           }
+           dofwd = false;
+        }
+///////////////////////////////////////////////////
+//Backward
+/////////////////////////////////////
+        if(dobck == true)
+        {
+          audio.stopSong();
+          N--;
+          if(N < 0) N = 0;
+//rewind 
+//going to song #N
+          root.rewindDirectory();     
+          for(int i=0;i<=N;i++)
+          {
+            file = root.openNextFile();   
+          }
+          Serial.println(file.name());            
+          audio.connecttoSD(file.name());
+          dobck = false   ;
+        }
 
-    if ((mute == false) && (beepON == false))audio.loop();
-    if (mode != sdM)
-    {
-      sdON = 0;
-      audio.stopSong();
-      SPI.end();
-      SD.end();
-      vTaskDelete(NULL);
+
+///////////////////////////////////////////        
+//  file playing  
+//////////////////////////////  
+       if((mute == false) && (beepON == false))audio.loop(); 
+////////////////////////////////////       
+// mode change  
+/////////////////////////////     
+       if(mode != sdM)
+       {
+              sdON = 0;
+              audio.stopSong();
+              SPI.end();
+              SD.end();
+              vTaskDelete(NULL);
+       }      
     }
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -479,6 +562,32 @@ int inc(int v, uint8_t *l)
   *l = v;
   return 0;
 }
+
+static void keyb(void* pdata)
+{
+static int v0, v1, v2;
+static int ec0=0, ec1=0, ec2=0;
+  while(1)
+  {
+    if((gpio_get_level(VP) == 1) && (ec0 == 1)){b0 = v0; ec0 = 0;}
+    if((gpio_get_level(VP) == 1) && (b0 == -1)) {v0 = 0;ec0 = 0;}
+    if(gpio_get_level(VP) == 0) {v0++; ec0 = 1;}
+   
+    if((gpio_get_level(VM) == 1) && (ec1 == 1)){b1 = v1; ec1 = 0;}
+    if((gpio_get_level(VM) == 1) && (b1 == -1)) {v1 = 0;ec1 = 0;}
+    if(gpio_get_level(VM) == 0) {v1++; ec1 = 1;}
+   
+    if((gpio_get_level(MU) == 1) && (ec2 == 1)){b2 = v2; ec2 = 0;}
+    if((gpio_get_level(MU) == 1) && (b2 == -1)) {v2 = 0; ec2 = 0;}
+    if(gpio_get_level(MU) == 0) {v2++; ec2
+    = 1;}
+    
+ 
+  //  printf("%d %d %d %d %d %d\n",b0,b1,b2,v0,v1,v2);
+    delay(100);
+  }
+}
+
 
 /////////////////////////////////////////////////////////////////////////
 
@@ -674,7 +783,15 @@ void setup()
     return;
   }
 
-  char *dev_name = "MUSE_SPEAKER";
+ // Specific BT device name (using  MAC ref)
+  uint8_t mac [6];
+  char macStr[20];
+  char dev_name [30];
+  esp_read_mac((uint8_t*)&mac, ESP_MAC_WIFI_STA);
+  snprintf(macStr, 19, "-%x%x%x", mac[3], mac[4], mac[5]);
+  strcpy(dev_name, "MUSE_SPEAKER");
+  strcat(dev_name, macStr);
+ // printf("devName ====> %s\n",dev_name);
   esp_bt_dev_set_device_name(dev_name);
 
   //initialize A2DP sink
@@ -691,37 +808,47 @@ void setup()
   mode = btM;
   //////////////////////////////////////////////////////////////////////
   modeCall();
-
-  /*
-    //test : ES8388 registers read back
-    for(int i = 0; i < 53; i++)
-    {
-    uint8_t  v;
-    v = ES8388_Read_Reg((uint8_t)i);
-    printf("R%02d = %02x\n",i,(int)v);
-    }
-  */
-
+  xTaskCreate(keyb, "keyb", 5000, NULL, 5, NULL);
 }
+
+
+
 void loop() {
-  delay(100);
+#define longK 8  
+  delay(200);
+ 
+  // forward     (for SD)
+  if ((b0 > longK) && (mode == sdM)) {
+    beep();
+    b0 = -1;
+    dofwd = true;
+  }
+  // backward     (for SD)
+  if ((b1 > longK) && (mode == sdM)) {
+    beep();
+    b1 = -1;
+    dobck = true;
+  }
+
 
   // volume change
   //
+
   oldVol = vol;
-  vol = vol + 4 * inc(gpio_get_level(VP), &vplus);
-  vol = vol - 4 * inc(gpio_get_level(VM), &vmoins);
+  if((b0 > 0) && (b0 < longK)) {vol = vol + 4 ;b0 = -1;}
+  if((b1 > 0) && (b1 < longK)) {vol = vol - 4 ;b1 = -1;}
+  
   if (vol > maxVol) vol = maxVol;
   if (vol < 0) vol = 0;
   if (vol != oldVol) {
     beep();
-    ES8388vol_Set(vol);
+    ES8388vol_Set(vol); 
   }
 
-
-
   // mute / unmute (pause/run for SD)
-  if (inc(gpio_get_level(MU), &vmute) == 1)
+  //
+ 
+  if (b2 > 0)
   {
     if (mute == false)
     {
@@ -745,17 +872,13 @@ void loop() {
       }
       beep();
     }
+    b2 = -1;
   }
-
-  // forward     (for SD)
-  if ((inc(gpio_get_level(FW), &vfwd) == 1) && (mode == sdM)) {
-    beep();
-    dofwd = true;
-  }
+  
 
   // AUX in detect
   if (inc(gpio_get_level(AUXD), &vauxd) == 1)
-  {
+   {
     mode = auxM;
     if ((mode == auxM) && (auxON == false)) {
       modeCall();
