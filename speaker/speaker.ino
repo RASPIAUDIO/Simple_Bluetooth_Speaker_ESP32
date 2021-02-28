@@ -1,4 +1,4 @@
-
+                                                                                                                                                                                                                                                                                                                                                         
 /*--------------------------------------------------------------------------------------------------
 Introduction
 This program is intended to be used with the ESP32 Muse speaker, a portable and affordable bluetooth speaker that is fully programmable. ESP32 Muse is a commercial product that can be purchase here: https://raspiaudio.com/espmuse
@@ -52,10 +52,40 @@ extern "C"
 #include "esp_a2dp_api.h"
 #include "esp_avrc_api.h"
 #include "SPIFFS.h"
+#include <NeoPixelBus.h>
+#include <driver/adc.h>
 
 
 //#define muse 1
 
+
+
+
+
+//////////////////////////////
+// NeoPixel led control
+/////////////////////////////
+#define PixelCount 1
+#define PixelPin 22
+RgbColor RED(255, 0, 0);
+RgbColor GREEN(0, 255, 0);
+RgbColor BLUE(0, 0, 255);
+RgbColor YELLOW(255, 255, 0);
+RgbColor WHITE(255, 255, 255);
+RgbColor BLACK(0, 0, 0);
+
+RgbColor REDL(64, 0, 0);
+RgbColor GREENL(0, 64, 0);
+RgbColor BLUEL(0, 0, 64);
+RgbColor WHITEL(64, 64, 64);
+RgbColor BLACKL(0, 0, 0);
+NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+
+//////////////////////////////////////////////////////////////
+// init audio library
+//////////////////////////////////////////////////////////////
+  Audio audio;
+////////////////////////////////////////////////////////////// 
 
 ////////////////////////////////
 // Digital I/O used
@@ -105,8 +135,6 @@ extern "C"
 #define auxM 2
 #define maxVol 50
 
-uint8_t vplus = 0, vmoins = 0, vmode = 0;
-uint8_t vmute = 0;
 int b0 = -1,b1 = -1,b2 = -1;
 bool mute = false;
 uint8_t vfwd = 0;
@@ -128,12 +156,331 @@ static esp_a2d_audio_state_t m_audio_state = ESP_A2D_AUDIO_STATE_STOPPED;
 #define TAG "bt_sp"
 // typedef int (*http_data_cb) (http_parser*, const char *at, size_t length);
 // typedef int (*http_cb) (http_parser*);
-
-Audio audio;
+void ES8388_Write_Reg(uint8_t reg, uint8_t val);
+void factory_test(void);
 
 static File root;
 static File file;
 static bool mp3ON;
+
+
+bool testOK;
+#define BLOCK_SIZE 128
+#define I2SR (i2s_port_t)0
+
+
+const i2s_config_t i2s_configR = {
+      .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX), // Receive, transfer
+      .sample_rate = 44100,                         // 
+      .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT, // 
+      .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, //
+      .communication_format = I2S_COMM_FORMAT_I2S,
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,     // Interrupt level 1
+      .dma_buf_count = 4,                           // number of buffers
+
+      .dma_buf_len = BLOCK_SIZE                           // samples per buffer
+  };
+  
+      i2s_pin_config_t pin_configR=
+      {
+      .bck_io_num = 5 ,    // BCKL
+      .ws_io_num = 25 ,    // LRCL
+      .data_out_num = 26,  // DOUT
+      .data_in_num = 35    // DIN
+      };
+
+////////////////////////////////////////////////////////////////////////////////////////
+//
+// Task playing audio signal (mono, 8 bits, 44100)
+//
+////////////////////////////////////////////////////////////////////////////////////////
+static void playAudio(void* data)
+{ 
+   int16_t s0,s1;
+   int8_t c[16000];
+   int l;  
+   size_t t;
+   uint16_t s16[64];
+
+   int a = 1;
+ //  i2s_set_clk(I2SR,44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+     
+   File f = SPIFFS.open("/500hz44100Mono.wav", FILE_READ);
+   if(f == NULL) printf("err opening file\n");
+// header read
+   f.read((uint8_t*)c, 44);
+// data read   
+   l = (int)f.read((uint8_t*)c, 16000);
+   if(l < 0) printf("Erreur SD\n");
+
+//  i2s_zero_dma_buffer(I2SR);
+  for(int i = 0;i < l; i++)
+   {  
+// sample value 8bits -> 16        
+       s0 = (((int16_t)(c[i]&0xFF)) - 128) << 8 ;       
+// attenuation  a 
+       s0 = s0 >> a; 
+// buffering -> s16                
+       s16[i % 64] = (uint16_t)s0;      
+      if(((i+1) % 64) ==  0)  
+      {
+       int n = 0; 
+//sending       
+      while(n == 0) n = i2s_write_bytes(I2SR, (const char*)s16,128,portMAX_DELAY);   
+      }      
+   }
+// muting after playing   
+   for(int i=0;i<64;i++)s16[i] = 0;
+     int n = 0; 
+   while(n == 0) n = i2s_write_bytes(I2SR, (const char*)s16,128,portMAX_DELAY);     
+   i2s_zero_dma_buffer(I2SR);
+
+   f.close();
+   printf ("Play End\n");
+   vTaskDelete(NULL);
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+// Task recording signal mono 16bits 44100
+//
+//////////////////////////////////////////////////////////////////////////////
+static void recordAudio(void* data)
+{
+  static const int bytesToRead = 32000;
+  uint8_t b[32000];
+  size_t t;
+  int16_t v[1024];
+  int DC; 
+  int i,j;
+  int16_t max1, max2;
+  int imax1, imax2;
+  int16_t min1, min2;
+  int imin1, imin2;
+ // i2s_set_clk(I2SR,44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
+
+
+  i = 0; 
+  do
+  {
+     int n = 0;
+        while(n == 0)n = i2s_read_bytes(I2SR,(char*)&b[i],128 ,portMAX_DELAY);
+     i = i + n;
+  }while(i < bytesToRead);
+
+
+//selecting sample (1024)
+j = 0;
+for(i=16000;i<18048;i=i+2)
+{
+  v[j++] = (int16_t)(b[i+1] << 8) + (int16_t) b[i];
+}
+
+// DC component
+DC = 0;
+for(j=0;j<1024;j++)
+{
+  DC = DC + v[j];
+}
+DC = DC / 1024;
+printf("DC = %d\n",DC);
+
+// correction
+for(j=0;j<1024;j++) 
+{
+  v[j] = v[j] - DC;
+}
+ max1 = max2 = 0;
+ 
+//first max
+ for(j=0;j<88;j++)
+ {
+  if(v[j] > max1)
+  {
+    max1 = v[j];
+    imax1 = j;
+  }
+ }
+// next max
+ for(j=88;j<176;j++)
+ {
+  if(v[j] > max2)
+  {
+    max2 = v[j];
+    imax2 = j;
+  }
+ }
+ 
+//first min
+ min1 = min2 = 0;
+ for(j=0;j<88;j++)
+ {
+  if(v[j] < min1)
+  {
+    min1 = v[j];
+    imin1 = j;
+  }
+ }
+//next min
+ for(j=88;j<176;j++)
+ {
+  if(v[j] < min2)
+  {
+    min2 = v[j];
+    imin2 = j;
+  }
+ }
+  printf("==================> %d %d  %d %d %d\n",max1,max2, imax1,imax2, imax2-imax1);
+  printf("==================> %d %d  %d %d %d\n",min1,min2, imin1,imin2, imin2-imin1);
+  
+// test 88 samples = 2ms -> 500hz
+  if (((imax2-imax1) == 88) && ((imin2-imin1) == 88) && (abs(imax1-imin1) >= 40) && (abs(imax1-imin1)<=50)) testOK = true;
+
+  printf("fin\n");
+  vTaskDelete(NULL);
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// Factory test
+/////////////////////////////////////////////////////////////////////////////////
+void factory_test(void)
+{
+  printf("factory test...\n");
+#ifdef muse  
+  strip.SetPixelColor(0,WHITE);
+  strip.Show();
+#endif   
+
+// provides MCLK
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
+  WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
+
+  // reset
+  //ES8388_Write_Reg(0, 0x80);
+  //ES8388_Write_Reg(0, 0x00);
+  //  DAC mute
+  ES8388_Write_Reg(25, 0x04);
+  //powerup
+  ES8388_Write_Reg(1, 0x50);
+  ES8388_Write_Reg(2, 0x00);
+  // slave mode
+  ES8388_Write_Reg(8, 0x00);
+  // DAC powerdown
+  ES8388_Write_Reg(4, 0xC0);
+  // vmidsel/500k ADC/DAC idem
+  ES8388_Write_Reg(0, 0x12);
+
+  // i2s 16 bits
+  ES8388_Write_Reg(23, 0x18);
+  // sample freq 256
+  ES8388_Write_Reg(24, 0x02);
+  //LIN1/RIN1
+  ES8388_Write_Reg(38, 0x00);
+  // left DAC to left mixer
+  ES8388_Write_Reg(39, 0x90);
+  // right DAC to right mixer
+  ES8388_Write_Reg(42, 0x90);
+  // DACLRC ADCLRC idem
+  ES8388_Write_Reg(43, 0x80);
+  ES8388_Write_Reg(45, 0x00);
+  // DAC volume max
+  ES8388_Write_Reg(27, 0x00);
+  ES8388_Write_Reg(26, 0x00);  
+
+   // ADC poweroff
+   ES8388_Write_Reg(3,0xFF);
+   // ADC amp 24dB
+   ES8388_Write_Reg(9,0x88);   
+   // LINPUT1/RINPUT1  
+   ES8388_Write_Reg(10,0);
+   // ADC mono left
+   ES8388_Write_Reg(11,0x02);   
+   //i2S 16b
+   ES8388_Write_Reg(12,0x0C); 
+   //MCLK 256
+   ES8388_Write_Reg(13,0x02); 
+   // ADC high pass filter
+  // ES8388_Write_Reg(14,0x30);    
+   // ADC Volume   
+   ES8388_Write_Reg(16,0x00);
+   ES8388_Write_Reg(17,0x00);
+   // ALC OFF
+  // ES8388_Write_Reg(18,0x3F);
+  ES8388_Write_Reg(3,0x09);
+    ES8388_Write_Reg(43,0x80);
+  // Start
+  ES8388_Write_Reg(2, 0xF0);
+  delay(1);
+  ES8388_Write_Reg(2, 0x00); 
+  ES8388_Write_Reg(4, 0x30);
+  ES8388_Write_Reg(3, 0x00);
+  // DAC volume max                                                                                                                                  
+  ES8388_Write_Reg(46, 0x21);
+  ES8388_Write_Reg(47, 0x21);
+  // unmute
+  ES8388_Write_Reg(25, 0x00);
+  
+  // amp validation
+  gpio_set_level(PA, 1);
+    i2s_driver_uninstall(I2SR);
+ //I2S port0 init:   TX, RX, mono , 16bits, 44100hz
+i2s_driver_install(I2SR, &i2s_configR,0,NULL);
+i2s_set_pin(I2SR, &pin_configR);
+i2s_set_clk(I2SR,44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
+i2s_stop(I2SR);  
+//////////////////////////////////////////////////////////////
+//up to  5 tests
+/////////////////////////////////////////////////////////////
+for(int i=0;i<5;i++)
+{
+i2s_start(I2SR);
+testOK = false;
+// record task
+xTaskCreatePinnedToCore(recordAudio, "recordAudio", 40000, NULL, 10, NULL,0);
+delay(10);
+// play task
+xTaskCreatePinnedToCore(playAudio, "playAudio", 20000, NULL, 10, NULL,1);
+delay(2000);
+i2s_stop(I2SR);
+if(testOK == true) break;
+}
+
+if(testOK == true)
+{
+ char b[15];
+ File f = SD.open("/record.wav", FILE_WRITE);
+ f.write((uint8_t*)"MuseRosAndCO", 13);
+ f.close(); 
+ f = SD.open("/record.wav", FILE_READ);
+ f.read ((uint8_t*)b, 13);
+ f.close(); 
+ if(strcmp(b, "MuseRosAndCO") != 0)
+ {
+  strip.SetPixelColor(0, RED);
+  printf("pas OK\n");
+  strip.Show(); 
+ }
+ else
+ {
+  strip.SetPixelColor(0, GREEN);
+  printf("OK\n");
+  strip.Show();
+ }
+}
+else
+{
+strip.SetPixelColor(0, RED);
+printf("pas OK\n");
+strip.Show(); 
+}
+ 
+  delay(5000);
+  ESP.restart();
+}
+
+
+
 /*
   void btc_avrc_ct_send_metadata_cmd()
   {
@@ -337,7 +684,7 @@ void ES8388_Init(void)
   WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
 
   
-  hal_i2s_init(I2SN, I2S_DOUT, I2S_LRC, I2S_BCLK, I2S_DIN, 2);
+
 
   // reset
   ES8388_Write_Reg(0, 0x80);
@@ -532,7 +879,7 @@ static void sd(void* pdata)
 ///////////////////////////////////////////        
 //  file playing  
 //////////////////////////////  
-       if((mute == false) && (beepON == false))audio.loop(); 
+       if((mute == false) && (beepON == false)) ; 
 ////////////////////////////////////       
 // mode change  
 /////////////////////////////     
@@ -562,7 +909,10 @@ int inc(int v, uint8_t *l)
   *l = v;
   return 0;
 }
-
+///////////////////////////////////////////////////////////////////////
+// task managing the speaker buttons
+// normal or long press
+/////////://///////////////////////////////////////////////////////////
 static void keyb(void* pdata)
 {
 static int v0, v1, v2;
@@ -582,17 +932,34 @@ static int ec0=0, ec1=0, ec2=0;
     if(gpio_get_level(MU) == 0) {v2++; ec2
     = 1;}
     
- 
   //  printf("%d %d %d %d %d %d\n",b0,b1,b2,v0,v1,v2);
     delay(100);
   }
 }
 
+//////////////////////////////////////////////////////////////////////////
+// task for battery monitoring
+//////////////////////////////////////////////////////////////////////////
+#define NGREEN 2300
+#define NYELLOW 1800
+static void battery(void* pdata)
 
-/////////////////////////////////////////////////////////////////////////
+{
+  int val;
+  while(1)
+  {
+   val = adc1_get_raw(ADC1_GPIO33_CHANNEL);
+   printf("Battery : %d\n");
+   if(val < NYELLOW) strip.SetPixelColor(0, RED);
+   else if(val > NGREEN) strip.SetPixelColor(0, GREEN);
+   else strip.SetPixelColor(0, YELLOW);
+   strip.Show();
+    
+   delay(10000);
+  }
+}
 
 
-/////////////////////////////////////////////////////////////////////////
 //
 // bluetooth callbacks
 ///////////////////////////////////////////////////////////////////////////
@@ -658,6 +1025,7 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *p_param)
       if (ESP_A2D_AUDIO_STATE_STARTED == a2d->audio_stat.state) {
         m_pkt_cnt = 0;
       case ESP_A2D_AUDIO_STATE_EVT: {
+
         }
         break;
       }
@@ -698,6 +1066,7 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *p_param)
 /////////////////////////////////////////////////////////////////////////////////////////
 void setup()
 {
+
   Serial.begin(115200);
   hal_i2c_init(0, SDA, SCL);
   esp_err_t err;
@@ -711,8 +1080,16 @@ void setup()
     SPIFFS.format();
   */
   printf(" SPIFFS used bytes  ====> %d of %d\n", (int)SPIFFS.usedBytes(), (int)SPIFFS.totalBytes());
+  
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+  delay(500);
+  if(!SD.begin(SD_CS))
+  {
+    printf("init SD failed!\n");
+  }  
 
-  vplus = vmoins = 0;
+
+                         
   vol = maxVol;
   ///////////////////////////////////////////
   // init GPIO pins
@@ -753,24 +1130,50 @@ void setup()
   // Store SD detect and AUX detect initial values
   vsdd = gpio_get_level(SDD);
   vauxd = gpio_get_level(AUXD);
-  /////////////////////////////////////////////////////////////
+ 
+  ////////////////////////////////////////////////////////////////
+  // init led handle
+  ///////////////////////////////////////////////////////////////
+  strip.Begin();  
 
+  /////////////////////////////////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////////////////////////////////
+  // if all three buttons pressed ======>> factory test
+  //
+  /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+   if((gpio_get_level(VP) == 0) && (gpio_get_level(VM) == 0) && (gpio_get_level(MU) == 0)) factory_test();
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////   
+
+  ////////////////////////////////////////////////////////////////
+  // init ADC interface for battery survey
+  /////////////////////////////////////////////////////////////////
+  adc1_config_width(ADC_WIDTH_BIT_12);
+  adc1_config_channel_atten(ADC1_GPIO33_CHANNEL, ADC_ATTEN_DB_11);
+  ////////////////////////////////////////////////////////////////
 
   /////////////////////////////////////////////////////////////////
-  // init ES8388
+  // init  codec ES8388
   //
   ES8388_Init();
-  /////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////
 
+  ////////////////////////////////////////////////////////////////
+  // init i2s
+  ////////////////////////////////////////////////////////////////
+  hal_i2s_init(I2SN, I2S_DOUT, I2S_LRC, I2S_BCLK, I2S_DIN, 2);
   // init i2s default rates
   i2s_set_clk(I2SN, 44100, (i2s_bits_per_sample_t)16, (i2s_channel_t)2);
   sampleRate = 44100;
+  ////////////////////////////////////////////////////////////////
+
 
   /////////////////////////////////////////////////////////////////////////
   // init bluetooth
   //
   /////////////////////////////////////////////////////////////////////////
-
   btStart();
 
   if (esp_bluedroid_init() != ESP_OK) {
@@ -804,19 +1207,24 @@ void setup()
   //set discoverable and connectable mode, wait to be connected
   esp_bt_gap_set_scan_mode(ESP_BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE);
   esp_avrc_ct_send_metadata_cmd(0, ESP_AVRC_MD_ATTR_TITLE | ESP_AVRC_MD_ATTR_ARTIST);
+  ///////////////////////////////////////////////////////////////////////////////////////
+  
   ES8388vol_Set(vol);
   mode = btM;
   //////////////////////////////////////////////////////////////////////
   modeCall();
+  //task managing buttons
   xTaskCreate(keyb, "keyb", 5000, NULL, 5, NULL);
+  //task managing the battery
+  xTaskCreate(battery, "battery", 5000, NULL, 1, NULL);  
 }
 
 
 
 void loop() {
+
 #define longK 8  
   delay(200);
- 
   // forward     (for SD)
   if ((b0 > longK) && (mode == sdM)) {
     beep();
@@ -909,7 +1317,7 @@ void loop() {
     modeCall();
   }
 
- 
+  b0=b1=b2= -1;
 
   /*
         int volp;
