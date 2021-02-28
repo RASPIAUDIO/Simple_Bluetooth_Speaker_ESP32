@@ -351,7 +351,12 @@ void factory_test(void)
   strip.SetPixelColor(0,WHITE);
   strip.Show();
 #endif   
-
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+  delay(500);
+  if(!SD.begin(SD_CS))
+  {
+    printf("init SD failed!\n");
+  }  
 // provides MCLK
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
   WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
@@ -879,7 +884,7 @@ static void sd(void* pdata)
 ///////////////////////////////////////////        
 //  file playing  
 //////////////////////////////  
-       if((mute == false) && (beepON == false)) ; 
+       if((mute == false) && (beepON == false)) audio.loop(); 
 ////////////////////////////////////       
 // mode change  
 /////////////////////////////     
@@ -1081,12 +1086,7 @@ void setup()
   */
   printf(" SPIFFS used bytes  ====> %d of %d\n", (int)SPIFFS.usedBytes(), (int)SPIFFS.totalBytes());
   
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-  delay(500);
-  if(!SD.begin(SD_CS))
-  {
-    printf("init SD failed!\n");
-  }  
+  
 
 
                          
