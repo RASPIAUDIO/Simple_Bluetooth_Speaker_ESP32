@@ -267,6 +267,12 @@ static void recordAudio(void* data)
      i = i + n;
   }while(i < bytesToRead);
 
+ File f = SD.open("/raw.wav", FILE_WRITE);
+ f.write((uint8_t*) b, 32000);
+ f.close(); 
+
+
+
 
 //selecting sample (1024)
 j = 0;
@@ -642,6 +648,8 @@ uint8_t ES8388_Read_Reg( uint8_t reg_add)
 void ES8388vol_Set(uint8_t volx)
 {
 #define M maxVol-33
+
+
   printf("volume ==> %d\n", volx);
   ES8388_Write_Reg(25, 0x00);
   if (volx > maxVol) volx = maxVol;
