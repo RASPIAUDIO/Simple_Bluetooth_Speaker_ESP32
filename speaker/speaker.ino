@@ -105,7 +105,6 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 
 //Contacts
 #define PA      GPIO_NUM_21      // Amp power ON
-
 #ifdef muse
 #define AUXD    GPIO_NUM_27      // AUX In detect 27
 #else
@@ -173,7 +172,7 @@ const i2s_config_t i2s_configR = {
       .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX), // Receive, transfer
       .sample_rate = 44100,                         // 
       .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT, // 
-      .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, //
+      .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //
       .communication_format = I2S_COMM_FORMAT_I2S,
       .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,     // Interrupt level 1
       .dma_buf_count = 4,                           // number of buffers
@@ -257,8 +256,6 @@ static void recordAudio(void* data)
   int16_t min1, min2;
   int imin1, imin2;
  // i2s_set_clk(I2SR,44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
-
-
   i = 0; 
   do
   {
@@ -266,13 +263,6 @@ static void recordAudio(void* data)
         while(n == 0)n = i2s_read_bytes(I2SR,(char*)&b[i],128 ,portMAX_DELAY);
      i = i + n;
   }while(i < bytesToRead);
-
- File f = SD.open("/raw.wav", FILE_WRITE);
- f.write((uint8_t*) b, 32000);
- f.close(); 
-
-
-
 
 //selecting sample (1024)
 j = 0;
@@ -352,17 +342,14 @@ for(j=0;j<1024;j++)
 /////////////////////////////////////////////////////////////////////////////////
 void factory_test(void)
 {
+  int test_phase;
+  
   printf("factory test...\n");
 #ifdef muse  
   strip.SetPixelColor(0,WHITE);
   strip.Show();
 #endif   
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-  delay(500);
-  if(!SD.begin(SD_CS))
-  {
-    printf("init SD failed!\n");
-  }  
+
 // provides MCLK
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
   WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL)& 0xFFFFFFF0);
@@ -434,14 +421,26 @@ void factory_test(void)
   
   // amp validation
   gpio_set_level(PA, 1);
-    i2s_driver_uninstall(I2SR);
+
+  
+  i2s_driver_uninstall(I2SR);
  //I2S port0 init:   TX, RX, mono , 16bits, 44100hz
 i2s_driver_install(I2SR, &i2s_configR,0,NULL);
 i2s_set_pin(I2SR, &pin_configR);
 i2s_set_clk(I2SR,44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 i2s_stop(I2SR);  
+//
+test_phase = 0;
+//ROUT1 off LOUT1 on
+//ES8388_Write_Reg(47, 0x21);
+//ES8388_Write_Reg(46, 0x00);
+//ES8388_Write_Reg(4, 0x20);
+ES8388_Write_Reg(39, 0x90);
+ES8388_Write_Reg(42, 0x00);
+
+printf("Left test\n");
 //////////////////////////////////////////////////////////////
-//up to  5 tests
+//up to  5 tests **left speaker + microphone**
 /////////////////////////////////////////////////////////////
 for(int i=0;i<5;i++)
 {
@@ -459,7 +458,46 @@ if(testOK == true) break;
 
 if(testOK == true)
 {
+printf("right test\n");  
+test_phase = 1;
+//ROUT1 on LOUT1 off
+//ES8388_Write_Reg(46, 0x21);
+//ES8388_Write_Reg(47, 0x00);
+//ES8388_Write_Reg(4, 0x10);
+ES8388_Write_Reg(39, 0x00);
+ES8388_Write_Reg(42, 0x90);
+//////////////////////////////////////////////////////////////
+//up to  5 tests **write speaker + microphone**
+/////////////////////////////////////////////////////////////
+for(int i=0;i<5;i++)
+{
+i2s_start(I2SR);
+testOK = false;
+// record task
+xTaskCreatePinnedToCore(recordAudio, "recordAudio", 40000, NULL, 10, NULL,0);
+delay(10);
+// play task
+xTaskCreatePinnedToCore(playAudio, "playAudio", 20000, NULL, 10, NULL,1);
+delay(2000);
+i2s_stop(I2SR);
+if(testOK == true) break;
+}
+
+if(testOK == true)
+{
+ test_phase = 2;
+//////////////////////////////////////////////////////////////////// 
+//test write/read on SD
+////////////////////////////////////////////////////////////////////  
  char b[15];
+
+ SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+ delay(500);
+ if(!SD.begin(SD_CS))
+  {
+    printf("init SD failed!\n");
+    testOK = false;
+  }  
  File f = SD.open("/record.wav", FILE_WRITE);
  f.write((uint8_t*)"MuseRosAndCO", 13);
  f.close(); 
@@ -468,29 +506,52 @@ if(testOK == true)
  f.close(); 
  if(strcmp(b, "MuseRosAndCO") != 0)
  {
-  strip.SetPixelColor(0, RED);
-  printf("pas OK\n");
-  strip.Show(); 
+ testOK = false;
  }
- else
- {
+SD.remove("/record.wav");
+}
+
+////////////////////////////////////////////////////////////////////
+// displaying  test result
+//  led green => everything OK
+//  led yellow => left speaker and/or microphone problem
+//  led red => right speaker and/or microphone problem
+//  led white => SD problem
+//  
+//////////////////////////////////////////////////////////////////
+
+if(testOK == true)
+{
   strip.SetPixelColor(0, GREEN);
-  printf("OK\n");
-  strip.Show();
- }
+  printf("Everything OK\n");
 }
 else
+ {
+switch(test_phase)
 {
-strip.SetPixelColor(0, RED);
-printf("pas OK\n");
-strip.Show(); 
+
+  case 0 : 
+    strip.SetPixelColor(0, YELLOW);
+    printf("left speaker error\n");
+    break;
+  case 1 : 
+    strip.SetPixelColor(0, RED);
+    printf("right speaker error\n");
+    break;
+  case 2 : 
+    strip.SetPixelColor(0, WHITE);
+    printf("SD error\n");
+    break;        
 }
+ }
+
+   strip.Show();
  
-  delay(5000);
+  delay(5000000);
   ESP.restart();
 }
 
-
+}
 
 /*
   void btc_avrc_ct_send_metadata_cmd()
