@@ -53,9 +53,8 @@ extern "C"
 #include "esp_avrc_api.h"
 #include "SPIFFS.h"
 #include <NeoPixelBus.h>
-#include <driver/adc.h>
-
-
+#include <driver/adc.h> 
+#include "esp_bt.h"
 //#define muse 1
 
 
@@ -458,7 +457,7 @@ if(testOK == true) break;
 
 if(testOK == true)
 {
-printf("right test\n");  
+printf("Right test\n");  
 test_phase = 1;
 //ROUT1 on LOUT1 off
 //ES8388_Write_Reg(46, 0x21);
@@ -482,7 +481,7 @@ delay(2000);
 i2s_stop(I2SR);
 if(testOK == true) break;
 }
-
+}
 if(testOK == true)
 {
  test_phase = 2;
@@ -551,7 +550,7 @@ switch(test_phase)
   ESP.restart();
 }
 
-}
+
 
 /*
   void btc_avrc_ct_send_metadata_cmd()
@@ -709,7 +708,14 @@ uint8_t ES8388_Read_Reg( uint8_t reg_add)
 void ES8388vol_Set(uint8_t volx)
 {
 #define M maxVol-33
-
+/*
+if(mode == btM)
+{
+  esp_avr_rn_param_t rn_param;
+  rn_param.volume = volx;
+  esp_avrc_tg_send_rn_rsp(ESP_AVRC_RN_VOLUME_CHANGE, ESP_AVRC_RN_RSP_CHANGED, &rn_param);
+}
+*/
 
   printf("volume ==> %d\n", volx);
   ES8388_Write_Reg(25, 0x00);
