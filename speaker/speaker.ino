@@ -18,35 +18,18 @@ Issue with the volume in AUX mode
 --------------------------------------------------------------------------------------------------*/
 
 #include "Audio.h"
-#include "SD.h"
-#include "FS.h"
-//#include "driver/i2s.h"
-
 
 extern "C"
 {
 #include "hal_i2c.h"
 #include "hal_i2s.h"
-#include "driver/i2c.h"
-#include "driver/i2s.h"
 }
 
 #include "Arduino.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include "freertos/event_groups.h"
-#include "esp_vfs_fat.h"
 #include "esp_log.h"
-#include <sys/socket.h>
-#include "nvs.h"
-#include "nvs_flash.h"
-#include <dirent.h>
-
-
 #include "esp_bt_main.h"
 #include "esp_bt_defs.h"
 #include "esp_bt_device.h"
@@ -55,8 +38,7 @@ extern "C"
 #include "esp_avrc_api.h"
 #include "SPIFFS.h"
 #include <NeoPixelBus.h>
-#include <driver/adc.h> 
-#include "esp_bt.h"
+
 #define muse 1
 
 
@@ -1179,8 +1161,8 @@ void setup()
   Serial.begin(115200);
   hal_i2c_init(0, SDA, SCL);
   esp_err_t err;
-  err = nvs_flash_init();
-  if (err != ESP_OK) printf("nvs flash error...\n");
+  //err = nvs_flash_init();
+ // if (err != ESP_OK) printf("nvs flash error...\n");
 
   if (!SPIFFS.begin())Serial.println("Erreur SPIFFS");
   /*
