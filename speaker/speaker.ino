@@ -317,10 +317,7 @@ for(j=0;j<1024;j++)
   if((imin2-imin1) < LO) testOK = false;
   if((imin2-imin1) > HI) testOK = false;
   if(abs(imax1-imin1) <= LOH) testOK = false;
-  if(abs(imax1-imin1) >= HIH) testOK = false;
-
-  if(testOK == true) SPIFFS.remove("/testToDo");
-  
+  if(abs(imax1-imin1) >= HIH) testOK = false; 
   printf("fin\n");
   vTaskDelete(NULL);
 }
@@ -525,6 +522,7 @@ if(testOK == true)
 {
   strip.SetPixelColor(0, GREEN);
   printf("Everything OK\n");
+  SPIFFS.remove("/testToDo");
 }
 else
  {
@@ -543,6 +541,7 @@ switch(test_phase)
     printf("SD error\n");
     break;        
 }
+
  }
 
  strip.Show();
