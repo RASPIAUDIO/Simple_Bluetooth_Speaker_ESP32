@@ -17,7 +17,10 @@ ESP32 Muse is a commercial product that can be purchase here: https://raspiaudio
 - Select Toll-ESP32 Sketch data upload this will upload the wav files use by the programmable
 - Upload
 
+# Factory test
+- To trigger the factory test move the file testToDo in the data directory, then upload SPIFF data.
+
+
 #  To be done
-- Self test for the factory
 - Low battery warning
-- Issue with the volume in AUX mode
+

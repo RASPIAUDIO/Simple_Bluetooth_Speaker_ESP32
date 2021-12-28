@@ -98,13 +98,13 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 //Buttons
 
 #ifdef muse
-#define MU GPIO_NUM_19      // Pause/Play
-#define VM GPIO_NUM_12      // Vol-
-#define VP GPIO_NUM_32      // Vol+ 
+#define MU GPIO_NUM_12      // Pause/Play
+#define VM GPIO_NUM_32      // Vol-
+#define VP GPIO_NUM_19     // Vol+ 
 #else
-#define MU GPIO_NUM_3       // Pause/Play
-#define VM GPIO_NUM_36      // Vol-
-#define VP GPIO_NUM_39      // Vol+ 
+#define MU  GPIO_NUM_36    // Pause/Play
+#define VM  GPIO_NUM_39   // Vol-
+#define VP  GPIO_NUM_3   // Vol+ 
 ///////////// bidon en attendant.....
 #define FW MU
 
