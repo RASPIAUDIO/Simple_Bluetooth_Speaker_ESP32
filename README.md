@@ -4,6 +4,8 @@ ESP32 Muse is a commercial product that can be purchase here: https://raspiaudio
 
 Full tutorial could be found here : https://forum.raspiaudio.com/t/esp-muse-luxe-bluetooth-speaker/294
 
+Voices recorded with the courtesy of [Aurélie Loilier](http://aurelieloilier.com/) (all rights reserved)
+
 
 # Features
 - ESP32 offers : Bluetooth, Wifi
