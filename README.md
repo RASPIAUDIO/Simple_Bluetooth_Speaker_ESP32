@@ -1,5 +1,5 @@
 # Introduction
-This program is intended to be used with the ESP32 Muse speaker, a portable and affordable bluetooth speaker that is fully programmable.
+This program is intended to be used with the ESP32 Muse Luxe speaker, a portable and affordable bluetooth speaker that is fully programmable.
 ESP32 Muse is a commercial product that can be purchase here: https://raspiaudio.com/espmuse
 
 Full tutorial could be found here : https://forum.raspiaudio.com/t/esp-muse-luxe-bluetooth-speaker/294
