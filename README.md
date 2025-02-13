@@ -4,6 +4,7 @@ ESP32 Muse Luxe is a commercial product that can be purchase here: https://raspi
 
 Full tutorial could be found here : https://forum.raspiaudio.com/t/esp-muse-luxe-bluetooth-speaker/294
 
+
 Voices recorded with the courtesy of [Aurélie Loilier](http://aurelieloilier.com/) (all rights reserved)
 
 
