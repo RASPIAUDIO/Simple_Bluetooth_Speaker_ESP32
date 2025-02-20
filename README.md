@@ -24,7 +24,7 @@ To quickly load the precompiled binary, follow these steps:
 - Low battery sensor
 
 # Compilation Instructions
-
+compiled with arduino 3.1.0
 1. Select `Tool -> Board -> ESP32 Dev Module`
 2. Choose the partition scheme "Huge app"
 3. Use `Tool -> ESP32 Sketch Data Upload` to upload the WAV files used by the program
