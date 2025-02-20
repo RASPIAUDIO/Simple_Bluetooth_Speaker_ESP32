@@ -18,6 +18,7 @@ To quickly load the precompiled binary, follow these steps:
 # Features
 - Intro startup wav play
 - Bluetooth A2DP
+- Codec volume control
 - Heaphone output with jack detection
 - RGB LEDs
 - Low battery sensor
