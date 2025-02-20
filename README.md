@@ -6,6 +6,15 @@ This program is intended to be used with the ESP32 Muse Luxe speaker, a portable
 
 Voice recordings are provided courtesy of [Aurélie Loilier](http://aurelieloilier.com/) (all rights reserved). To load the voice, you need to perform an ESP32 data sketch upload and select LittleFS.
 
+# Quick Start
+
+To quickly load the precompiled binary, follow these steps:
+
+1. Go to [app.raspiaudio.com](https://app.raspiaudio.com).
+2. Select "Luxe-Bluetooth."
+3. Use a Chrome browser for best compatibility.
+4. Connect your device using a USB cable.
+
 # Features
 
 - Bluetooth and Wi-Fi capabilities via ESP32
