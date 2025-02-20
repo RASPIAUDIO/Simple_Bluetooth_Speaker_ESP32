@@ -16,12 +16,10 @@ To quickly load the precompiled binary, follow these steps:
 4. Connect your device using a USB cable.
 
 # Features
-
-- Bluetooth and Wi-Fi capabilities via ESP32
-- Line input
-- SD card media reader
+- Intro startup wav play
+- Bluetooth A2DP
+- Heaphone output with jack detection
 - RGB LEDs
-- Microphone
 - Low battery sensor
 
 # Compilation Instructions
@@ -41,3 +39,7 @@ To initiate the factory test, hold the three top buttons while powering on the d
 
 - Implement low battery warning
 - Enable SD card reading
+- SD card media reader
+- Microphone support for phone handfree
+
+
