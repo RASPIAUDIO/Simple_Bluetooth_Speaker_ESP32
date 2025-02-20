@@ -30,7 +30,8 @@ compiled with arduino 3.1.0
 3. Use `Tool -> ESP32 Sketch Data Upload` to upload the WAV files used by the program
 4. Upload your sketch
 5. Ensure the following options are selected:
-     - ![image](https://github.com/user-attachments/assets/4920e7a3-65a3-4098-b42b-2be1af66a60d)
+![image](https://github.com/user-attachments/assets/1d91c99f-238e-474a-956e-7092ff2ced8c)
+
 
 # Factory Test
 
