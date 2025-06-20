@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MUSE Configurator</title>
+<style>
+body{font-family:sans-serif;max-width:480px;margin:2rem auto}
+button,input{font-size:1rem;margin-top:.8rem}
+#log{white-space:pre;background:#eee;padding:.5rem;border-radius:4px;height:6rem;overflow:auto}
+</style>
+</head>
+<body>
+<h1>MUSE Configurator</h1>
+
+<button id="connect">Connect</button><br>
+
+<label>LED colour
+  <input type="color" id="led" value="#00ff00" disabled>
+</label><br>
+
+<label>Bluetooth name
+  <input type="text" id="btname" value="LUXE" disabled>
+</label>
+
+<pre id="log"></pre>
+
+<script>
+const log = t => (document.getElementById('log').textContent += t + '\n');
+
+let writer, reader;
+
+async function connect() {
+  if (!('serial' in navigator)) { log('Web Serial unsupported'); return; }
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+
+  const enc = new TextEncoder();
+  const dec = new TextDecoderStream();
+  port.readable.pipeTo(dec.writable);
+  reader = dec.readable.getReader();
+  writer = port.writable.getWriter();
+
+  document.getElementById('led').disabled    = false;
+  document.getElementById('btname').disabled = false;
+
+  listen();
+  log('-- connected --');
+}
+
+async function listen() {
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value) log(value.trim());
+  }
+}
+
+async function send(obj) {
+  const line = JSON.stringify(obj) + '\n';
+  await writer.write(new TextEncoder().encode(line));
+}
+
+document.getElementById('connect').onclick = connect;
+
+document.getElementById('led').onchange = e => {
+  const hex = e.target.value.substring(1);
+  const rgb = [0,2,4].map(i => parseInt(hex.substr(i,2),16));
+  send({ cmd:'set', param:'led', value:rgb });
+};
+
+document.getElementById('btname').onchange = e => {
+  send({ cmd:'set', param:'bt_name', value:e.target.value });
+};
+</script>
+</body>
+</html>
