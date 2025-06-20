@@ -51,20 +51,7 @@ The page also includes an **ESP-Web-Tools** button that flashes the latest relea
 
 ---
 
-## Factory Test
 
-Hold the three top buttons while power-cycling → the firmware jumps to the factory-test partition. Details in the separate test repo: <https://github.com/RASPIAUDIO/Muse-Luxe-Factory-Test>.
-
----
-
-## Road-map / Ideas
-
-* OTA update over Wi-Fi  
-* SD-card media playback  
-* Built-in microphone → hands-free / voice-assistant  
-* Battery percentage pop-ups over AVRCP
-
----
 
 ## Credits
 
