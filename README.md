@@ -1,47 +1,74 @@
-# Introduction
+# ESP MUSE – Bluetooth Speaker Firmware (Luxe & Proto)
 
-This is a simple example demonstrating how to use the Muse Luxe as a Bluetooth speaker. This code is from the app included with the Muse Luxe.
+This repository contains the **complete source code and binaries** that turn an ESP-MUSE Luxe or Proto board into a fully featured Bluetooth speaker.
 
-This program is intended to be used with the ESP32 Muse Luxe speaker, a portable and affordable Bluetooth speaker that is fully programmable. The ESP32 Muse Luxe is a commercial product available for purchase here: [ESP32 Muse Luxe](https://raspiaudio.com/produit/esp-muse-luxe).
+| Feature | Status |
+|---------|--------|
+| A2DP sink (stereo) | ✅ |
+| Codec or direct I²S (board-selectable) | ✅ |
+| Head-phone jack detection (Luxe) | ✅ |
+| RGB NeoPixel status LED | ✅ |
+| Low-battery indicator | ✅ |
+| Custom start-up jingle | ✅ |
+| **Runtime configurator (Web app)** | ✅ |
 
-Voice recordings are provided courtesy of [Aurélie Loilier](http://aurelieloilier.com/) (all rights reserved). To load the voice, you need to perform an ESP32 data sketch upload and select LittleFS.
+---
 
-# Quick Start
+## New! Online Configurator 🚀
 
-To quickly load the precompiled binary, follow these steps:
+You can now change the **Bluetooth name**, the **LED colour**, and upload your own **start-up jingle** (≤ 2 s WAV) **without recompiling**:
 
-1. Go to [app.raspiaudio.com](https://app.raspiaudio.com).
-2. Select "Luxe-Bluetooth."
-3. Use a Chrome browser for best compatibility.
-4. Connect your device using a USB cable.
+**▶︎ [Open the RaspiAudio ESP MUSE Customizator](https://raspiaudio.github.io/BT/)**
 
-# Features
-- Intro startup wav play
-- Bluetooth A2DP
-- Codec volume control
-- Heaphone output with jack detection
-- RGB LEDs
-- Low battery sensor
-
-# Compilation Instructions
-compiled with arduino 3.1.0
-1. Select `Tool -> Board -> ESP32 Dev Module`
-2. Choose the partition scheme "Huge app"
-3. Use `Tool -> ESP32 Sketch Data Upload` to upload the WAV files used by the program
-4. Upload your sketch
-5. Ensure the following options are selected:
-![image](https://github.com/user-attachments/assets/1d91c99f-238e-474a-956e-7092ff2ced8c)
+![image](https://github.com/user-attachments/assets/dfecd49f-d9f6-4836-aa32-6df99d91cdbb)
 
 
-# Factory Test
+The page also includes an **ESP-Web-Tools** button that flashes the latest release `.bin` straight from your browser.
 
-To initiate the factory test, hold the three top buttons while powering on the device. More information on the factory test can be found here: [Muse Luxe Factory Test](https://github.com/RASPIAUDIO/Muse-Luxe-Factory-Test)
+> The configurator’s source code lives in the same repo: see [`raspiaudio_customizator.html`](./raspiaudio_customizator.html).
 
-# To Be Done
+---
 
-- Implement low battery warning
-- Enable SD card reading
-- SD card media reader
-- Microphone support for phone handfree
+## Quick Start (Flash pre-built firmware)
 
+1. Open <https://raspiaudio.github.io/BT/> in Chrome / Edge.  
+2. In step 1, click **“Flash latest firmware”** and choose your ESP32 Muse board.  
+3. After flashing, hit **“Connect ESP32”** and tweak the settings in step 2.  
+4. Enjoy your personalised speaker!
 
+---
+
+## Building from Source
+
+1. **Arduino IDE ≥ 3.1.0**  
+2. Board: **ESP32 Dev Module**  
+3. Partition scheme: **Huge App**  
+4. Optional WAV files → `Tools > ESP32 Sketch Data Upload` (LittleFS)  
+5. `Upload` and you’re done.
+
+> The default board can be switched by commenting / uncommenting  
+> `#define BOARD_LUXE` or `#define BOARD_PROTO` in `main.ino`.
+
+---
+
+## Factory Test
+
+Hold the three top buttons while power-cycling → the firmware jumps to the factory-test partition. Details in the separate test repo: <https://github.com/RASPIAUDIO/Muse-Luxe-Factory-Test>.
+
+---
+
+## Road-map / Ideas
+
+* OTA update over Wi-Fi  
+* SD-card media playback  
+* Built-in microphone → hands-free / voice-assistant  
+* Battery percentage pop-ups over AVRCP
+
+---
+
+## Credits
+
+* **Hardware:** [RaspiAudio ESP-MUSE Luxe & Proto](https://raspiaudio.com)  
+* **Voice prompts:** © [Aurélie Loilier](http://aurelieloilier.com/) – all rights reserved.
+
+Happy hacking!
