@@ -1,76 +1,159 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
 <meta charset="utf-8">
-<title>MUSE Configurator</title>
+<title>MUSE Config & Jingle Tool</title>
 <style>
-body{font-family:sans-serif;max-width:480px;margin:2rem auto}
-button,input{font-size:1rem;margin-top:.8rem}
-#log{white-space:pre;background:#eee;padding:.5rem;border-radius:4px;height:6rem;overflow:auto}
+body{font-family:sans-serif;margin:2rem;max-width:520px}
+section{margin-top:2rem;padding:1rem;border:1px solid #ccc;border-radius:6px}
+h2{margin:0 0 .6rem 0;font-size:1.2rem}
+button,input[type=color]{font-size:1.1rem}
+label{display:block;margin:.6rem 0}
+#log{white-space:pre;background:#eee;padding:.6rem;border-radius:4px;
+     height:10rem;overflow:auto;font-size:.9rem}
+audio{width:100%;margin-top:.6rem}
 </style>
-</head>
-<body>
-<h1>MUSE Configurator</h1>
 
-<button id="connect">Connect</button><br>
+<button id="connect">🔌 Connect ESP32</button>
 
-<label>LED colour
+<section>
+  <h2>Bluetooth name</h2>
+  <label>
+    New name :
+    <input id="btname" placeholder="MySpeaker" disabled>
+  </label>
+  <button id="setbt" disabled>Send</button>
+</section>
+
+<section>
+  <h2>LED colour</h2>
   <input type="color" id="led" value="#00ff00" disabled>
-</label><br>
+</section>
 
-<label>Bluetooth name
-  <input type="text" id="btname" value="LUXE" disabled>
-</label>
+<section>
+  <h2>Startup jingle (≤ 2 s)</h2>
+  <button id="rec"  disabled>🎙️ Record</button>
+  <button id="play" disabled>▶️ Play</button>
+  <button id="upload" disabled>⬆️ Upload</button>
+  <audio id="aud" hidden controls></audio>
+</section>
 
 <pre id="log"></pre>
 
 <script>
-const log = t => (document.getElementById('log').textContent += t + '\n');
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const log = t => { const l=$("log"); l.textContent+=t+"\n"; l.scrollTop=l.scrollHeight; };
+const encoder = new TextEncoder();
 
-let writer, reader;
+/* ---------- serial ---------- */
+let port, writer;
+async function ensurePort(){
+  if(port) return true;
+  try{
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    writer = port.writable.getWriter();
 
-async function connect() {
-  if (!('serial' in navigator)) { log('Web Serial unsupported'); return; }
-  const port = await navigator.serial.requestPort();
-  await port.open({ baudRate: 115200 });
-
-  const enc = new TextEncoder();
-  const dec = new TextDecoderStream();
-  port.readable.pipeTo(dec.writable);
-  reader = dec.readable.getReader();
-  writer = port.writable.getWriter();
-
-  document.getElementById('led').disabled    = false;
-  document.getElementById('btname').disabled = false;
-
-  listen();
-  log('-- connected --');
+    // passive reader → log everything coming back
+    const dec = new TextDecoderStream();
+    port.readable.pipeTo(dec.writable);
+    const rd = dec.readable.getReader();
+    (async()=>{ while(true){ const {value}=await rd.read(); if(value) log(value.trim()); }})();
+    return true;
+  }catch(e){ log("Serial error: "+e); return false; }
 }
+function send(cmd){ if(writer) writer.write(encoder.encode(cmd+"\n")); }
 
-async function listen() {
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (value) log(value.trim());
+/* ---------- UI enable after connect ---------- */
+$("connect").onclick = async ()=>{
+  if(await ensurePort()){
+    log("Connected.");
+    ["btname","setbt","led","rec"].forEach(id=>$(id).disabled=false);
+    $("connect").disabled=true;
   }
-}
-
-async function send(obj) {
-  const line = JSON.stringify(obj) + '\n';
-  await writer.write(new TextEncoder().encode(line));
-}
-
-document.getElementById('connect').onclick = connect;
-
-document.getElementById('led').onchange = e => {
-  const hex = e.target.value.substring(1);
-  const rgb = [0,2,4].map(i => parseInt(hex.substr(i,2),16));
-  send({ cmd:'set', param:'led', value:rgb });
 };
 
-document.getElementById('btname').onchange = e => {
-  send({ cmd:'set', param:'bt_name', value:e.target.value });
+/* ---------- BT name ---------- */
+$("setbt").onclick = ()=>{
+  const n=$("btname").value.trim();
+  if(!n){log("Enter a name");return;}
+  if(n.length>23){log("Name too long (23 max)");return;}
+  send("##BT="+n);
+};
+
+/* ---------- LED colour ---------- */
+$("led").oninput = e =>{
+  const hex=e.target.value.substring(1);
+  const rgb=[0,2,4].map(i=>parseInt(hex.substr(i,2),16));
+  send(`##LED=${rgb[0]},${rgb[1]},${rgb[2]}`);
+};
+
+/* ---------- Recorder ---------- */
+let mediaRec,chunks=[],wavB64="",blobURL="";
+const resetRecUI=()=>{
+  ["play","upload"].forEach(id=>$(id).disabled=true);
+  $("aud").hidden=true; if(blobURL) URL.revokeObjectURL(blobURL),blobURL="";
+};
+$("rec").onclick = async ()=>{
+  if(!mediaRec){                    // start
+    resetRecUI();
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    mediaRec=new MediaRecorder(stream);
+    chunks=[];
+    mediaRec.ondataavailable=e=>chunks.push(e.data);
+    mediaRec.onstop=processRec;
+    mediaRec.start();
+    $("rec").textContent="🛑 Stop";
+    log("Recording… auto-stop in 2 s");
+    setTimeout(()=>mediaRec&&mediaRec.stop(),2000);
+  }else{                            // manual stop
+    mediaRec.stop();
+  }
+};
+
+async function processRec(){
+  $("rec").textContent="🎙️ Record";
+  mediaRec=null;
+
+  const blob=new Blob(chunks);
+  if(blob.size===0){log("No audio captured.");return;}
+
+  /* decode, resample → 22 050 Hz mono */
+  const ctx=new AudioContext();
+  const srcBuf=await ctx.decodeAudioData(await blob.arrayBuffer());
+  const off=new OfflineAudioContext(1,Math.round(srcBuf.duration*22050),22050);
+  const src=off.createBufferSource(); src.buffer=srcBuf; src.connect(off.destination); src.start();
+  const rend=await off.startRendering();
+
+  const pcm=rend.getChannelData(0);
+  if(pcm.length>22050*2){log(">2 s – discarded.");return;}
+
+  /* WAV 16-bit */
+  const bytes=new Uint8Array(44+pcm.length*2);
+  const dv=new DataView(bytes.buffer), ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,"RIFF"); dv.setUint32(4,36+pcm.length*2,true); ws(8,"WAVEfmt "); dv.setUint32(16,16,true);
+  dv.setUint16(20,1,true); dv.setUint16(22,1,true); dv.setUint32(24,22050,true);
+  dv.setUint32(28,22050*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+  ws(36,"data"); dv.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++) dv.setInt16(44+i*2, Math.max(-1,Math.min(1,pcm[i]))*32767, true);
+
+  wavB64=btoa(String.fromCharCode(...bytes));
+  log(`Clip ready (${(pcm.length/22050).toFixed(2)} s).`);
+  const wavBlob=new Blob([bytes],{type:"audio/wav"});
+  blobURL=URL.createObjectURL(wavBlob);
+  $("aud").src=blobURL; $("aud").hidden=false;
+  ["play","upload"].forEach(id=>$(id).disabled=false);
+}
+
+$("play").onclick=()=>$("aud").play();
+
+/* ---------- upload ---------- */
+$("upload").onclick=async()=>{
+  if(!wavB64){log("Nothing to upload");return;}
+  if(!(await ensurePort())) return;
+  send(`##WAVB64=${wavB64.length}`);
+  await new Promise(r=>setTimeout(r,300));   // wait RDY
+  log("Uploading…");
+  writer.write(encoder.encode(wavB64+"\n"));
+  log("Sent – wait for DONE.");
 };
 </script>
-</body>
-</html>
