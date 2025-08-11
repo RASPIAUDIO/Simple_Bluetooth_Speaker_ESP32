@@ -5,8 +5,8 @@
  ***************************************************************************/
 
 // ─── Select board ───────────────────────────────────────────────────────
-#define BOARD_PROTO              // GPIO-23 gain, no codec
-// #define BOARD_LUXE            // ES8388 codec + jack detect
+//#define BOARD_PROTO              // GPIO-23 gain, no codec
+ #define BOARD_LUXE            // ES8388 codec + jack detect
 // ────────────────────────────────────────────────────────────────────────
 
 #if defined(BOARD_LUXE) && defined(BOARD_PROTO)
@@ -47,6 +47,13 @@ BluetoothA2DPSink a2dp_sink(i2s);
 
 uint8_t mac[6];  char macStr[20];  char dev_name[32];
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+
+#if defined(BOARD_LUXE)
+  ES8388 es; //global init
+#endif
+
+
 
 /* -------------------------------------------------------------------- */
 void applyUserCol(){
