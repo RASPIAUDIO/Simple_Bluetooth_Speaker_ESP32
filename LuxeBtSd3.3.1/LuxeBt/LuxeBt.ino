@@ -52,7 +52,7 @@ void setup() {
 
   // Initialize the Task Watchdog Timer (TWDT)(for ESD event)
   esp_task_wdt_config_t wdt_config = {
-    .timeout_ms = 60 * 1000,                // 60 seconds timeout
+    .timeout_ms = 5 * 1000,                // 5 seconds timeout
     .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  
     .trigger_panic = true                  
   };
