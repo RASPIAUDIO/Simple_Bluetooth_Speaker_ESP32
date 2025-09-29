@@ -15,6 +15,8 @@
 #include "FS.h"
 #include <Adafruit_NeoPixel.h>
 #include "Audio.h"   // https://github.com/schreibfaul1/ESP32-audioI2S
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
 
 #define NUMPIXELS 1
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -41,7 +43,16 @@ bool sdInserted = false;
 
 void setup() {
   Serial.begin(115200);
-
+/*
+  // Initialize the Task Watchdog Timer (TWDT)(for ESD event)
+  esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = 60 * 1000,                // 60 seconds timeout
+    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  
+    .trigger_panic = true                  
+  };
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL); 
+*/
   // Initialize SD card SPI interface
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
   SPI.setFrequency(1000000);
@@ -144,6 +155,7 @@ void setup() {
       while (audio.isRunning() && sdInserted) {  
         sdInserted = (digitalRead(SD_DET_PIN) == LOW) ? true : false; 
         audio.loop();
+        esp_task_wdt_reset(); 
         delay(10);
       }
     }
@@ -154,6 +166,7 @@ void setup() {
 }
 
 void loop() {
+  esp_task_wdt_reset(); 
   delay(100);
 }
 

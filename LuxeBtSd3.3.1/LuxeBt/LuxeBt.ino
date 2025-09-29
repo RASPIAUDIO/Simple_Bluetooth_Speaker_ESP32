@@ -16,6 +16,9 @@
 #include "esp_system.h"
 #include "SD.h"
 #include "FS.h"
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
+
 #define NUMPIXELS 1
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 // Define your SD card detect pin (adjust the pin number as needed)
@@ -47,7 +50,16 @@ bool sdInserted = false;
 void setup() {
   Serial.begin(115200);
 
- 
+  // Initialize the Task Watchdog Timer (TWDT)(for ESD event)
+  esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = 60 * 1000,                // 60 seconds timeout
+    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  
+    .trigger_panic = true                  
+  };
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL); 
+
+
   ////// GPIO initialization
   gpio_reset_pin(GPIO_PA_EN);
   gpio_set_direction(GPIO_PA_EN, GPIO_MODE_OUTPUT);
@@ -132,7 +144,7 @@ void setup() {
 }
 
 void loop() {
-
+  esp_task_wdt_reset();
   delay(100);
 }
 
