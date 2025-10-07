@@ -178,16 +178,18 @@ static void sound(void* pdata)
   int val;
   while(true)
   {
+    
     if (gpio_get_level(SD_DET_PIN) == 1 ) {
     es.mute(ES8388::ES_MAIN, true);
     es.mute(ES8388::ES_OUT1, true);     
     const esp_partition_t* partition = esp_partition_find_first(
-                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
     if (partition != NULL) {
       esp_ota_set_boot_partition(partition);
       esp_restart();
     }
   }
+  
   // Play/Pause Button Handling
     if (gpio_get_level(BUTTON_PAUSE) == 0) {
       while (gpio_get_level(BUTTON_PAUSE) == 0) delay(10);
