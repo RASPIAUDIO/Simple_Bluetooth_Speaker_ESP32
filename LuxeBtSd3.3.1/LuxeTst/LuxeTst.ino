@@ -256,7 +256,13 @@ static void blinkBlue(int times) {
 // La fonction factoryTest() lancée si les 3 boutons sont enfoncés au démarrage.
 static void factoryTest(void* p) {
   Serial.println("=== MODE FACTORY TEST ===");
-
+  
+// prépare le redémarrage  
+  const esp_partition_t* partition = esp_partition_find_first(
+                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+    if (partition != NULL) {
+      esp_ota_set_boot_partition(partition);
+    }
   // Réinitialise l'I2S en mode full-duplex pour test
   
   i2sInitFullDuplex();
@@ -336,12 +342,14 @@ static void factoryTest(void* p) {
   pixels.show();
   Serial.println("=== Factory Test terminé ===");
   delay(1000);
+/*  
    const esp_partition_t* partition = esp_partition_find_first(
                                          ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
     if (partition != NULL) {
       esp_ota_set_boot_partition(partition);
       esp_restart();
     }
+*/    
   esp_restart();
 }
 
