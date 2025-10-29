@@ -19,6 +19,8 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define NUMPIXELS 1
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -42,6 +44,33 @@ ES8388 es;                   // ES8388 audio codec instance
 uint8_t *b;                  // Pointer for WAV file buffer
 
 static bool loopTaskOnWatchdog = false;  // Tracks loop task TWDT registration status
+static bool soundTaskOnWatchdog = false;
+static bool batteryTaskOnWatchdog = false;
+static bool twdtConfigured = false;
+
+static bool registerCurrentTaskWithWatchdog(bool *registeredFlag, const char *taskName) {
+  if (!registeredFlag || !twdtConfigured) {
+    return false;
+  }
+  if (*registeredFlag) {
+    return true;
+  }
+  esp_err_t status = esp_task_wdt_status(NULL);
+  if (status == ESP_OK) {
+    *registeredFlag = true;
+    return true;
+  }
+  if (status != ESP_ERR_NOT_FOUND) {
+    Serial.printf("TWDT status for %s: %s\n", taskName, esp_err_to_name(status));
+  }
+  esp_err_t addResult = esp_task_wdt_add(NULL);
+  if (addResult != ESP_OK) {
+    Serial.printf("Failed to register %s on TWDT: %s\n", taskName, esp_err_to_name(addResult));
+    return false;
+  }
+  *registeredFlag = true;
+  return true;
+}
 
 
 // Flag to ensure SD files are read only once per card insertion
@@ -64,15 +93,14 @@ void setup() {
   if (wdtResult != ESP_OK) {
     Serial.printf("Failed to configure TWDT: %s\n", esp_err_to_name(wdtResult));
   } else {
-    wdtResult = esp_task_wdt_add(NULL);
-    if (wdtResult != ESP_OK) {
-      Serial.printf("Failed to register loopTask on TWDT: %s\n", esp_err_to_name(wdtResult));
-    }
+    twdtConfigured = true;
+    registerCurrentTaskWithWatchdog(&loopTaskOnWatchdog, "loop");
   }
-  esp_err_t loopWdtStatus = esp_task_wdt_status(NULL);
-  loopTaskOnWatchdog = (loopWdtStatus == ESP_OK);
   if (!loopTaskOnWatchdog) {
-    Serial.printf("Loop task not subscribed to TWDT: %s\n", esp_err_to_name(loopWdtStatus));
+    esp_err_t loopWdtStatus = esp_task_wdt_status(NULL);
+    if (loopWdtStatus != ESP_OK) {
+      Serial.printf("Loop task not subscribed to TWDT: %s\n", esp_err_to_name(loopWdtStatus));
+    }
   }
 
 
@@ -107,6 +135,9 @@ void setup() {
   while (!es.begin(IIC_DATA, IIC_CLK)) {
     Serial.printf("Failed!\n");
     delay(1000);
+    if (loopTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
   }
   Serial.println("OK");
   es.volume(ES8388::ES_MAIN, maxVol);
@@ -162,6 +193,9 @@ void setup() {
     ln.read(b, 115000);
     ln.close();
     i2s.playWAV(b, 115000);  // Play the startup sound
+    if (loopTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
     free(b);
     i2s.end();
     delay(500);
@@ -172,6 +206,9 @@ void setup() {
     Serial.println("Failed to initialize I2S!");
     while (1);
      }  
+    if (loopTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
     a2dp_sink.start(dev_name);
     Serial.println("Bluetooth A2DP Sink Initialized"); 
   
@@ -189,9 +226,13 @@ void loop() {
 //////////////////////////////////////////////////////////////////////////
 static void sound(void* pdata)
 {
+  registerCurrentTaskWithWatchdog(&soundTaskOnWatchdog, "sound");
   int val;
   while(true)
   {
+    if (!soundTaskOnWatchdog) {
+      registerCurrentTaskWithWatchdog(&soundTaskOnWatchdog, "sound");
+    }
  
   if (gpio_get_level(SD_DET_PIN) == 0 ) {
     es.mute(ES8388::ES_MAIN, true);
@@ -285,8 +326,11 @@ static void sound(void* pdata)
       jack = false;
     }
 
-delay(100);
-}
+    if (soundTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
+    delay(100);
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -300,9 +344,13 @@ delay(100);
 #define ADC_battery 33
 static void battery(void* pdata)
 {
+  registerCurrentTaskWithWatchdog(&batteryTaskOnWatchdog, "battery");
   int val;
   while (1)
   {
+    if (!batteryTaskOnWatchdog) {
+      registerCurrentTaskWithWatchdog(&batteryTaskOnWatchdog, "battery");
+    }
     val = analogRead(ADC_battery);
     printf("Battery : %d\n");
     if (val < NYELLOW) pixels.setPixelColor(0, pixels.RED);      //RED
@@ -311,7 +359,16 @@ static void battery(void* pdata)
     pixels.show();
     taskYIELD(); // Cède la main aux autres tâches
 
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    if (batteryTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
+    const TickType_t stepDelay = 1000 / portTICK_PERIOD_MS;
+    for (int i = 0; i < 10; ++i) {
+      vTaskDelay(stepDelay);
+      if (batteryTaskOnWatchdog) {
+        esp_task_wdt_reset();
+      }
+    }
   }
 }
 
@@ -372,6 +429,8 @@ void audio_lasthost(const char *info){  //stream URL played
 void audio_eof_speech(const char *info){  
  //   Serial.print("eof_speech  ");Serial.println(info);
 }
+
+/*
 // Pour factory test via FFT et beep :
 #define SAMPLE_RATE     16000      
 #define BEEP_FREQ       500.0       // 500 Hz beep
@@ -545,7 +604,27 @@ void factoryTest() {
   // Allume le NeoPixel en blanc pour indiquer que le test est lancé
   pixels.begin();
   pixels.setBrightness(50);
-  pixels.setPixelColor(0, pixels.Color(255,255,255));
+  pixels.setPixelColor(0, pixels.Color(255,255,255));  - esp_task_wdt est le watchdog “tâche” fourni par ESP-IDF : il surveille les tâches FreeRTOS que vous inscrivez via esp_task_wdt_add(). Il s’appuie sur le watchdog matériel du Timer Group 0,
+  distinct du watchdog de démarrage (RTC WDT) qui protège tout le système au niveau bootloader.
+  - Initialisation : esp_task_wdt_init(timeout_sec, true|false) configure la durée du timer (1–140 s) et l’option panic. Stage 0 se déclenche si au moins une tâche n’a pas été “alimentée” avant
+  l’échéance ; si panic=true, ESP-IDF imprime un backtrace, déclenche un core dump (si activé) puis redémarre. Stage 1 est programmé automatiquement pour un reset matériel si Stage 0 est ignoré.
+  - Inscription : esp_task_wdt_add(NULL) inscrit la tâche courante (souvent la loop Arduino) ; vous pouvez ajouter plusieurs tâches critiques. Chaque tâche est identifiée par son handle et
+  enregistrée dans une liste protégée par mutex.
+  - Alimentation : chaque tâche inscrite doit appeler régulièrement esp_task_wdt_reset() (alias feed) avant la fin du timeout. Si une tâche se bloque sur I/O, deadlock, boucle infinie, ou attend un
+  mutex trop longtemps, elle cessera de nourrir le watchdog et déclenchera le Stage 0.
+  - Retrait : esp_task_wdt_delete(NULL) enlève la tâche de la surveillance. esp_task_wdt_deinit() libère le watchdog si plus nécessaire.
+  - CONFIG Kconfig : CONFIG_ESP_TASK_WDT active la fonctionnalité ; CONFIG_ESP_TASK_WDT_PANIC décide du comportement en Stage 0 ; CONFIG_ESP_TASK_WDT_TIMEOUT_S fixe la valeur par défaut ;
+  CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPUx inscrit automatiquement les tâches idle (utile pour détecter une CPU saturée).
+  - Arduino Core : esp_task_wdt_init() est généralement appelé par le framework (timeout ~5 s). La tâche loop est inscrite automatiquement ; si vous faites tourner une tâche secondaire gourmande,
+  ajoutez-la manuellement ou prolongez le timeout (esp_task_wdt_config_t avec ESP-IDF v5).
+  - Interaction avec reset : lors d’un trigger, le CPU en panique affiche le stack trace de la tâche fautive (via esp_backtrace_print), puis un reset complet. C’est ainsi que vous garantissez une
+  reprise autonome après incident interne/logiciel.
+  - Bonnes pratiques : nourrissez le watchdog dans toutes les sections longues (traitement audio, accès réseau), ou fractionnez-les avec vTaskDelay. Surveillez le log “Task watchdog got triggered”
+  pour identifier les tâches en timeout. Évitez d’inscrire des tâches dont la périodicité est supérieure au timeout ou qui peuvent se bloquer légitimement (sinon augmentez le délai).
+
+  Pour votre ESP32 Wrover : activez le watchdog dès l’initialisation, inscrivez toutes les tâches critiques, nourrissez-le depuis le code (typiquement dans la boucle principale ou via un timer
+  software) et laissez panic=true pour obtenir un redémarrage automatique et un diagnostic lors des blocages.
+
   pixels.show();
 
   delay(500);
@@ -570,7 +649,27 @@ void factoryTest() {
   bool rightOK = analyzeFFT(micBuffer);
 
   free(micBuffer);
-  i2s.end();
+  i2s.end();  - esp_task_wdt est le watchdog “tâche” fourni par ESP-IDF : il surveille les tâches FreeRTOS que vous inscrivez via esp_task_wdt_add(). Il s’appuie sur le watchdog matériel du Timer Group 0,
+  distinct du watchdog de démarrage (RTC WDT) qui protège tout le système au niveau bootloader.
+  - Initialisation : esp_task_wdt_init(timeout_sec, true|false) configure la durée du timer (1–140 s) et l’option panic. Stage 0 se déclenche si au moins une tâche n’a pas été “alimentée” avant
+  l’échéance ; si panic=true, ESP-IDF imprime un backtrace, déclenche un core dump (si activé) puis redémarre. Stage 1 est programmé automatiquement pour un reset matériel si Stage 0 est ignoré.
+  - Inscription : esp_task_wdt_add(NULL) inscrit la tâche courante (souvent la loop Arduino) ; vous pouvez ajouter plusieurs tâches critiques. Chaque tâche est identifiée par son handle et
+  enregistrée dans une liste protégée par mutex.
+  - Alimentation : chaque tâche inscrite doit appeler régulièrement esp_task_wdt_reset() (alias feed) avant la fin du timeout. Si une tâche se bloque sur I/O, deadlock, boucle infinie, ou attend un
+  mutex trop longtemps, elle cessera de nourrir le watchdog et déclenchera le Stage 0.
+  - Retrait : esp_task_wdt_delete(NULL) enlève la tâche de la surveillance. esp_task_wdt_deinit() libère le watchdog si plus nécessaire.
+  - CONFIG Kconfig : CONFIG_ESP_TASK_WDT active la fonctionnalité ; CONFIG_ESP_TASK_WDT_PANIC décide du comportement en Stage 0 ; CONFIG_ESP_TASK_WDT_TIMEOUT_S fixe la valeur par défaut ;
+  CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPUx inscrit automatiquement les tâches idle (utile pour détecter une CPU saturée).
+  - Arduino Core : esp_task_wdt_init() est généralement appelé par le framework (timeout ~5 s). La tâche loop est inscrite automatiquement ; si vous faites tourner une tâche secondaire gourmande,
+  ajoutez-la manuellement ou prolongez le timeout (esp_task_wdt_config_t avec ESP-IDF v5).
+  - Interaction avec reset : lors d’un trigger, le CPU en panique affiche le stack trace de la tâche fautive (via esp_backtrace_print), puis un reset complet. C’est ainsi que vous garantissez une
+  reprise autonome après incident interne/logiciel.
+  - Bonnes pratiques : nourrissez le watchdog dans toutes les sections longues (traitement audio, accès réseau), ou fractionnez-les avec vTaskDelay. Surveillez le log “Task watchdog got triggered”
+  pour identifier les tâches en timeout. Évitez d’inscrire des tâches dont la périodicité est supérieure au timeout ou qui peuvent se bloquer légitimement (sinon augmentez le délai).
+
+  Pour votre ESP32 Wrover : activez le watchdog dès l’initialisation, inscrivez toutes les tâches critiques, nourrissez-le depuis le code (typiquement dans la boucle principale ou via un timer
+  software) et laissez panic=true pour obtenir un redémarrage automatique et un diagnostic lors des blocages.
+
   Serial.println("===== RÉSULTATS FINALS =====");
   if (leftOK && rightOK) {
     Serial.println("Les deux tests passent.");
@@ -598,5 +697,5 @@ void factoryTest() {
   esp_restart();
 }
 
-
+*/
 //////////////////////////////////////////////////////////////////////////////////////////////
