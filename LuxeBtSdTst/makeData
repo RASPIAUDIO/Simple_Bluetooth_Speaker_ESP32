@@ -1,4 +1,0 @@
-/home/ros/.arduino15/packages/esp32/tools/mklittlefs/3.0.0-gnu12-dc7f933/mklittlefs -c . -b 4096 -p 256 -s 0x40000 ../littlefs.bin
-cd ..
-esptool.py -p /dev/ttyUSB0 -b 921600 write_flash 0x3B0000 littlefs.bin
-
