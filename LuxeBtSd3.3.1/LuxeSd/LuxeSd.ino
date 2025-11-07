@@ -80,6 +80,21 @@ void setup() {
   gpio_reset_pin(SD_DET_PIN);
   gpio_set_direction(SD_DET_PIN, GPIO_MODE_INPUT);
   gpio_set_pull_mode(SD_DET_PIN, GPIO_PULLUP_ONLY);
+  
+//////////////////////////////////////////////////////////////
+  // 3 buttons pushed ===> factory test
+  //////////////////////////////////////////////////////////////
+  if((gpio_get_level(BUTTON_PAUSE) == LOW) && (gpio_get_level(BUTTON_VOL_PLUS) == LOW) && (gpio_get_level(BUTTON_VOL_MINUS) == LOW))
+ {
+  const esp_partition_t* partition = esp_partition_find_first(
+                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
+    if (partition != NULL) {
+      esp_ota_set_boot_partition(partition);
+      esp_restart();
+    }
+ }
+  //////////////////////////////////////////////////////////////  
+  
 
   // Initialize the ES8388 audio codec
   Serial.printf("Connect to ES8388 codec... ");
