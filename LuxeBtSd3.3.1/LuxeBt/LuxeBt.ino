@@ -21,6 +21,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 #define NUMPIXELS 1
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -48,6 +49,15 @@ static bool soundTaskOnWatchdog = false;
 static bool batteryTaskOnWatchdog = false;
 static bool twdtConfigured = false;
 
+static volatile bool pendingBtConnectBeep = false;
+static bool isBtConnected = false;
+
+static constexpr float CONNECT_BEEP_TWO_PI = 6.28318530718f;
+static constexpr uint32_t CONNECT_BEEP_DURATION_MS = 180;
+static constexpr float CONNECT_BEEP_FREQUENCY = 1200.0f;
+static constexpr float CONNECT_BEEP_AMPLITUDE = 0.35f;
+static constexpr size_t CONNECT_BEEP_CHUNK = 256;
+
 static bool registerCurrentTaskWithWatchdog(bool *registeredFlag, const char *taskName) {
   if (!registeredFlag || !twdtConfigured) {
     return false;
@@ -70,6 +80,67 @@ static bool registerCurrentTaskWithWatchdog(bool *registeredFlag, const char *ta
   }
   *registeredFlag = true;
   return true;
+}
+
+static void playBluetoothConnectBeep() {
+  if (i2s.txChan() == nullptr) {
+    Serial.println("I2S TX not ready for BT beep");
+    return;
+  }
+
+  uint32_t sampleRate = i2s.txSampleRate();
+  if (sampleRate == 0) {
+    sampleRate = 44100;
+  }
+
+  const size_t totalSamples = (sampleRate * CONNECT_BEEP_DURATION_MS) / 1000;
+  if (totalSamples == 0) {
+    return;
+  }
+
+  int16_t pcm[CONNECT_BEEP_CHUNK * 2];
+  float phase = 0.0f;
+  const float phaseStep = (CONNECT_BEEP_TWO_PI * CONNECT_BEEP_FREQUENCY) / static_cast<float>(sampleRate);
+  size_t generated = 0;
+  while (generated < totalSamples) {
+    size_t batch = totalSamples - generated;
+    if (batch > CONNECT_BEEP_CHUNK) {
+      batch = CONNECT_BEEP_CHUNK;
+    }
+
+    for (size_t i = 0; i < batch; ++i) {
+      const float value = sinf(phase) * CONNECT_BEEP_AMPLITUDE;
+      phase += phaseStep;
+      if (phase >= CONNECT_BEEP_TWO_PI) {
+        phase -= CONNECT_BEEP_TWO_PI;
+      }
+      const int16_t sample = static_cast<int16_t>(value * 32767.0f);
+      const size_t idx = i * 2;
+      pcm[idx] = sample;
+      pcm[idx + 1] = sample;
+    }
+
+    const size_t bytesToWrite = batch * sizeof(int16_t) * 2;
+    const size_t written = i2s.write(reinterpret_cast<const uint8_t *>(pcm), bytesToWrite);
+    if (written != bytesToWrite) {
+      Serial.printf("I2S underrun while playing BT beep (%u/%u bytes)\n", static_cast<unsigned>(written), static_cast<unsigned>(bytesToWrite));
+      break;
+    }
+    if (soundTaskOnWatchdog) {
+      esp_task_wdt_reset();
+    }
+    generated += batch;
+  }
+}
+
+static void onBluetoothConnectionStateChanged(esp_a2d_connection_state_t state, void *context) {
+  (void)context;
+  Serial.printf("BT connection state: %s\n", a2dp_sink.to_str(state));
+  const bool nowConnected = (state == ESP_A2D_CONNECTION_STATE_CONNECTED);
+  if (nowConnected && !isBtConnected) {
+    pendingBtConnectBeep = true;
+  }
+  isBtConnected = nowConnected;
 }
 
 
@@ -209,6 +280,7 @@ void setup() {
     if (loopTaskOnWatchdog) {
       esp_task_wdt_reset();
     }
+    a2dp_sink.set_on_connection_state_changed(onBluetoothConnectionStateChanged, nullptr);
     a2dp_sink.start(dev_name);
     Serial.println("Bluetooth A2DP Sink Initialized"); 
   
@@ -232,6 +304,11 @@ static void sound(void* pdata)
   {
     if (!soundTaskOnWatchdog) {
       registerCurrentTaskWithWatchdog(&soundTaskOnWatchdog, "sound");
+    }
+
+    if (pendingBtConnectBeep) {
+      pendingBtConnectBeep = false;
+      playBluetoothConnectBeep();
     }
  
   if (gpio_get_level(SD_DET_PIN) == 0 ) {
