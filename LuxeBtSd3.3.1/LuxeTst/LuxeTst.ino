@@ -40,7 +40,13 @@ void setup() {
   };
   esp_task_wdt_init(&wdt_config);
   esp_task_wdt_add(NULL); 
-
+  
+// prépare le redémarrage  classique
+  const esp_partition_t* partition = esp_partition_find_first(
+                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+    if (partition != NULL) {
+      esp_ota_set_boot_partition(partition);
+    }
  
   ////// GPIO initialization
   gpio_reset_pin(GPIO_PA_EN);
@@ -257,12 +263,7 @@ static void blinkBlue(int times) {
 static void factoryTest(void* p) {
   Serial.println("=== MODE FACTORY TEST ===");
   
-// prépare le redémarrage  
-  const esp_partition_t* partition = esp_partition_find_first(
-                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
-    if (partition != NULL) {
-      esp_ota_set_boot_partition(partition);
-    }
+
   // Réinitialise l'I2S en mode full-duplex pour test
   
   i2sInitFullDuplex();
@@ -297,11 +298,8 @@ static void factoryTest(void* p) {
   free(micBuffer);
   i2s.end();
   Serial.println("===== RÉSULTATS FINALS =====");
-  if (leftOK && rightOK) {
-    Serial.println("Les deux tests passent.");
-    // LED verte
-    pixels.setPixelColor(0, pixels.Color(0,255,0));
-  } else if (!leftOK && !rightOK) {
+
+  if (!leftOK && !rightOK) {
     Serial.println("Les deux tests échouent.");
     // LED rouge
     pixels.setPixelColor(0, pixels.Color(255,0,0));
@@ -309,13 +307,21 @@ static void factoryTest(void* p) {
     Serial.println("Test gauche PASS, test droit FAIL.");
     // LED orange
     pixels.setPixelColor(0, pixels.Color(255,128,0));
-  } else {
+  } else if(!leftOK && rightOK) {
     Serial.println("Test gauche FAIL, test droit PASS.");
     // LED violet
     pixels.setPixelColor(0, pixels.Color(128,0,128));
   }
   pixels.show();
   delay(3000);
+  if(!leftOK || !rightOK)
+  {
+      // LED rouge
+    pixels.setPixelColor(0, pixels.Color(255,0,0));
+    pixels.show();
+    delay(2000);
+    esp_restart();   
+  }   
   blinkBlue(4);
   // Initialize SD card SPI interface
   bool SdOK = true;
@@ -342,14 +348,7 @@ static void factoryTest(void* p) {
   pixels.show();
   Serial.println("=== Factory Test terminé ===");
   delay(1000);
-/*  
-   const esp_partition_t* partition = esp_partition_find_first(
-                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
-    if (partition != NULL) {
-      esp_ota_set_boot_partition(partition);
-      esp_restart();
-    }
-*/    
+   
   esp_restart();
 }
 
