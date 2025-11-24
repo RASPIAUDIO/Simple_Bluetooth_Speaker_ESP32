@@ -82,7 +82,19 @@ void setup() {
   es.volume(ES8388::ES_MAIN, maxVol);
   es.volume(ES8388::ES_OUT1, volume);
   es.mute(ES8388::ES_MAIN, false);
-  es.mute(ES8388::ES_OUT1, false);
+  es.mute(ES8388::ES_OUT1, false);  
+  pixels.begin();
+  pixels.setBrightness(50);
+  pixels.setPixelColor(0, pixels.Color(0,0,0));
+  pixels.show();
+  while((gpio_get_level(BUTTON_PAUSE) != LOW) || (gpio_get_level(BUTTON_VOL_PLUS) != LOW) || (gpio_get_level(BUTTON_VOL_MINUS) != LOW))
+  {
+    delay(500);
+  }
+
+
+
+
 
   xTaskCreatePinnedToCore(factoryTest, "factoryTest", 8192, NULL, 5, NULL, 0);
 }
@@ -269,8 +281,8 @@ static void factoryTest(void* p) {
   i2sInitFullDuplex();
   delay(1000);
   // Allume le NeoPixel en blanc pour indiquer que le test est lancé
-  pixels.begin();
-  pixels.setBrightness(50);
+ // pixels.begin();
+//  pixels.setBrightness(50);
   pixels.setPixelColor(0, pixels.Color(255,255,255));
   pixels.show();
 
