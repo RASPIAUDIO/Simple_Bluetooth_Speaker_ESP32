@@ -85,7 +85,7 @@ void setup() {
   es.mute(ES8388::ES_OUT1, false);  
   pixels.begin();
   pixels.setBrightness(50);
-  pixels.setPixelColor(0, pixels.Color(0,0,0));
+  pixels.setPixelColor(0, pixels.Color(255,255,255));
   pixels.show();
   while((gpio_get_level(BUTTON_PAUSE) != LOW) || (gpio_get_level(BUTTON_VOL_PLUS) != LOW) || (gpio_get_level(BUTTON_VOL_MINUS) != LOW))
   {
