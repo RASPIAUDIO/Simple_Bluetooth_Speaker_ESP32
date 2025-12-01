@@ -360,8 +360,8 @@ static void factoryTest(void* p) {
   pixels.show();
   Serial.println("=== Factory Test terminé ===");
   delay(1000);
-   
-  esp_restart();
+  for(;;)delay(10);
+  //esp_restart();
 }
 
 
