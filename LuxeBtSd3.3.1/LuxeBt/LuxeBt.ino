@@ -39,8 +39,8 @@ BluetoothA2DPSink a2dp_sink(i2s);
 uint8_t mac[6];              // Array to store MAC address
 char macStr[20];             // String to store formatted MAC
 char dev_name[30];           // Bluetooth device name
-bool jack = false;   
-bool mp3ON = false;        // 
+bool jack = false;
+bool mp3ON = false;        //
 ES8388 es;                   // ES8388 audio codec instance
 uint8_t *b;                  // Pointer for WAV file buffer
 
@@ -174,7 +174,6 @@ void setup() {
     }
   }
 
-
   ////// GPIO initialization
   gpio_reset_pin(GPIO_PA_EN);
   gpio_set_direction(GPIO_PA_EN, GPIO_MODE_OUTPUT);
@@ -191,8 +190,6 @@ void setup() {
   gpio_reset_pin(BUTTON_PAUSE);
   gpio_set_direction(BUTTON_PAUSE, GPIO_MODE_INPUT);
   gpio_set_pull_mode(BUTTON_PAUSE, GPIO_PULLUP_ONLY);
-  
-  
 
   gpio_reset_pin(Jack_Detect);
   gpio_set_direction(Jack_Detect, GPIO_MODE_INPUT);
@@ -216,27 +213,22 @@ void setup() {
   es.mute(ES8388::ES_MAIN, false);
   es.mute(ES8388::ES_OUT1, false);
 
-
-//////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////
   // 3 buttons pushed ===> factory test
   //////////////////////////////////////////////////////////////
-  if((gpio_get_level(BUTTON_PAUSE) == LOW) && (gpio_get_level(BUTTON_VOL_PLUS) == LOW) && (gpio_get_level(BUTTON_VOL_MINUS) == LOW))
- {
-  const esp_partition_t* partition = esp_partition_find_first(
+  if ((gpio_get_level(BUTTON_PAUSE) == LOW) && (gpio_get_level(BUTTON_VOL_PLUS) == LOW) && (gpio_get_level(BUTTON_VOL_MINUS) == LOW)) {
+    const esp_partition_t* partition = esp_partition_find_first(
                                          ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
     if (partition != NULL) {
       esp_ota_set_boot_partition(partition);
       esp_restart();
     }
- }
+  }
   //////////////////////////////////////////////////////////////
-  
-  
 
   // Initialize LittleFS and play the startup sound
   if (!LittleFS.begin()) {
     Serial.println("LittleFS initialisation failed!");
- //  while (1) { }
   }
 
   // Construct the Bluetooth device name using the MAC address
@@ -247,43 +239,55 @@ void setup() {
   Serial.print("Device name : ");
   Serial.println(dev_name);
 
-  xTaskCreatePinnedToCore(battery, "battery", 2048, NULL, 5, NULL, 1);
-  xTaskCreatePinnedToCore(sound, "sound", 2048, NULL, 5, NULL, 1);
-
-
-    i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_SDOUT, I2S_SDIN, I2S_MCLK);
-    if (!i2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT,
-                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) 
-     {
+  // Initialize I2S for Startup Sound
+  i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_SDOUT, I2S_SDIN, I2S_MCLK);
+  if (!i2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT,
+                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
     Serial.println("Failed to initialize I2S!");
     while (1);
-     }  
+  }
 
-    b = (uint8_t *)ps_malloc(160000);
+  // Play Startup Sound safely
+  b = (uint8_t *)ps_malloc(160000);
+  if (b != NULL) {
     File ln = LittleFS.open("/bluetooth.wav", FILE_READ);
-    ln.read(b, 115000);
-    ln.close();
-    i2s.playWAV(b, 115000);  // Play the startup sound
-    if (loopTaskOnWatchdog) {
-      esp_task_wdt_reset();
+    if (ln) {
+      ln.read(b, 115000);
+      ln.close();
+      i2s.playWAV(b, 115000);  // Play the startup sound
     }
     free(b);
-    i2s.end();
-    delay(500);
-    i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_SDOUT, I2S_SDIN, I2S_MCLK);
-    if (!i2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT,
-                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) 
-     {
+  } else {
+    Serial.println("PSRAM allocation failed!");
+  }
+
+  if (loopTaskOnWatchdog) {
+    esp_task_wdt_reset();
+  }
+  i2s.end();
+  delay(500);
+
+  // Re-Initialize I2S for Bluetooth
+  i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_SDOUT, I2S_SDIN, I2S_MCLK);
+  if (!i2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT,
+                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
     Serial.println("Failed to initialize I2S!");
     while (1);
-     }  
-    if (loopTaskOnWatchdog) {
-      esp_task_wdt_reset();
-    }
-    a2dp_sink.set_on_connection_state_changed(onBluetoothConnectionStateChanged, nullptr);
-    a2dp_sink.start(dev_name);
-    Serial.println("Bluetooth A2DP Sink Initialized"); 
-  
+  }
+  if (loopTaskOnWatchdog) {
+    esp_task_wdt_reset();
+  }
+
+  // Start A2DP Sink
+  a2dp_sink.set_on_connection_state_changed(onBluetoothConnectionStateChanged, nullptr);
+  a2dp_sink.start(dev_name);
+  Serial.println("Bluetooth A2DP Sink Initialized");
+
+  // ========================================================
+  // ALL HARDWARE IS NOW READY. SAFE TO START TASKS.
+  // ========================================================
+  xTaskCreatePinnedToCore(battery, "battery", 4096, NULL, 5, NULL, 1);
+  xTaskCreatePinnedToCore(sound, "sound", 4096, NULL, 5, NULL, 1);
 }
 
 void loop() {
@@ -300,7 +304,7 @@ static void sound(void* pdata)
 {
   registerCurrentTaskWithWatchdog(&soundTaskOnWatchdog, "sound");
   int val;
-  while(true)
+  while (true)
   {
     if (!soundTaskOnWatchdog) {
       registerCurrentTaskWithWatchdog(&soundTaskOnWatchdog, "sound");
@@ -310,21 +314,22 @@ static void sound(void* pdata)
       pendingBtConnectBeep = false;
       playBluetoothConnectBeep();
     }
- 
-  if (gpio_get_level(SD_DET_PIN) == 0 ) {
-    es.mute(ES8388::ES_MAIN, true);
-    es.mute(ES8388::ES_OUT1, true);
 
-    const esp_partition_t* partition = esp_partition_find_first(
-                                         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    if (partition != NULL) {
-      esp_ota_set_boot_partition(partition);
-      esp_restart();
+/*-- TEMPORARILY DISABLED TO STOP REBOOT LOOP --
+    if (gpio_get_level(SD_DET_PIN) == 0 ) {
+      es.mute(ES8388::ES_MAIN, true);
+      es.mute(ES8388::ES_OUT1, true);
+
+      const esp_partition_t* partition = esp_partition_find_first(
+                                           ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+      if (partition != NULL) {
+        esp_ota_set_boot_partition(partition);
+        esp_restart();
+      }
     }
-  }
+*/
 
-
-  // Play/Pause Button Handling
+    // Play/Pause Button Handling
     if (gpio_get_level(BUTTON_PAUSE) == 0) {
       while (gpio_get_level(BUTTON_PAUSE) == 0) delay(10);
       if (!BPause) {
@@ -373,7 +378,7 @@ static void sound(void* pdata)
     if (gpio_get_level(BUTTON_VOL_MINUS) == 0) {
       while (gpio_get_level(BUTTON_VOL_MINUS) == 0) delay(10);
       volume -= 3;
-      if (volume < 0) volume = 0;  
+      if (volume < 0) volume = 0;
       printf(" v = %d\n", volume);
       if (volume < 6)
         es.volume(ES8388::ES_MAIN, volume);
@@ -429,7 +434,7 @@ static void battery(void* pdata)
       registerCurrentTaskWithWatchdog(&batteryTaskOnWatchdog, "battery");
     }
     val = analogRead(ADC_battery);
-    printf("Battery : %d\n");
+    printf("Battery : %d\n", val);
     if (val < NYELLOW) pixels.setPixelColor(0, pixels.RED);      //RED
     else if (val > NGREEN) pixels.setPixelColor(0, pixels.GREEN); //GREEN
     else pixels.setPixelColor(0, pixels.YELLOW);                 //YELLOW
@@ -458,72 +463,72 @@ static void battery(void* pdata)
 
 
 ////////////////////////////////////////////////
-void audio_info(const char *info){
-   /* int sampleRate;
+void audio_info(const char *info) {
+  /* int sampleRate;
     Serial.print("info        "); Serial.println(info);
-    if(strstr(info, "SampleRate=") != nullptr) 
+    if(strstr(info, "SampleRate=") != nullptr)
     {
     sscanf(info,"SampleRate=%d",&sampleRate);
     printf("==================>>>>>>>>>>%d\n", sampleRate);
     }
-   */
-} 
-void audio_id3data(const char *info){  //id3 metadata
+  */
+}
+void audio_id3data(const char *info) { //id3 metadata
   //  Serial.print("id3data     ");Serial.println(info);
 }
-void audio_eof_mp3(const char *info){  //end of file
-    Serial.print("eof_mp3     ");Serial.println(info);mp3ON = false;
+void audio_eof_mp3(const char *info) { //end of file
+  Serial.print("eof_mp3     "); Serial.println(info); mp3ON = false;
 }
-void audio_showstation(const char *info){
-   // Serial.print("station     ");Serial.println(info);
+void audio_showstation(const char *info) {
+  // Serial.print("station     ");Serial.println(info);
 }
-void audio_showstreaminfo(const char *info){
+void audio_showstreaminfo(const char *info) {
   //  Serial.print("streaminfo  ");Serial.println(info);
-   // Serial.println("top");
+  // Serial.println("top");
 }
-void audio_showstreamtitle(const char *info){
+void audio_showstreamtitle(const char *info) {
 
-////////////////////////////////////////////////////////////////////////////////
-// FACTORY TEST
-////////////////////////////////////////////////////////////////////////////////
-// Pour factory test via FFT et beep :
-// FFT in-place sur 1024 échantillons (canal unique)
- //   Serial.print("streamtitle ");Serial.println(info);
+  ////////////////////////////////////////////////////////////////////////////////
+  // FACTORY TEST
+  ////////////////////////////////////////////////////////////////////////////////
+  // Pour factory test via FFT et beep :
+  // FFT in-place sur 1024 échantillons (canal unique)
+  //   Serial.print("streamtitle ");Serial.println(info);
 }
-void audio_bitrate(const char *info){
- //   Serial.print("bitrate     ");Serial.println(info);
-    
+void audio_bitrate(const char *info) {
+  //   Serial.print("bitrate     ");Serial.println(info);
+
 }
-void audio_commercial(const char *info){  //duration in sec
- //   Serial.print("commercial  ");Serial.println(info);
+void audio_commercial(const char *info) { //duration in sec
+  //   Serial.print("commercial  ");Serial.println(info);
 }
-void audio_icyurl(const char *info){  //homepage
- //   Serial.print("icyurl      ");Serial.println(info);
+void audio_icyurl(const char *info) { //homepage
+  //   Serial.print("icyurl      ");Serial.println(info);
 }
-void audio_lasthost(const char *info){  //stream URL played
- //   Serial.print("lasthost    ");Serial.println(info);
+void audio_lasthost(const char *info) { //stream URL played
+  //   Serial.print("lasthost    ");Serial.println(info);
 }
-void audio_eof_speech(const char *info){  
- //   Serial.print("eof_speech  ");Serial.println(info);
+void audio_eof_speech(const char *info) {
+  //   Serial.print("eof_speech  ");Serial.println(info);
 }
 
 /*
-// Pour factory test via FFT et beep :
-#define SAMPLE_RATE     16000      
-#define BEEP_FREQ       500.0       // 500 Hz beep
-#define RECORD_TIME_SEC 1           // Durée d'enregistrement en secondes
-#define TOTAL_SAMPLES   (SAMPLE_RATE * RECORD_TIME_SEC)
-#define TOTAL_BYTES     (TOTAL_SAMPLES * 4) // 32-bit par échantillon
-#define I2S_CHUNK_SIZE  256         // Taille d'un chunk en frames
-#define TOLERANCE_HZ    10.0f       // ±50 Hz tolerance (10% de 500Hz)
+  // Pour factory test via FFT et beep :
+  #define SAMPLE_RATE     16000
+  #define BEEP_FREQ       500.0       // 500 Hz beep
+  #define RECORD_TIME_SEC 1           // Durée d'enregistrement en secondes
+  #define TOTAL_SAMPLES   (SAMPLE_RATE * RECORD_TIME_SEC)
+  #define TOTAL_BYTES     (TOTAL_SAMPLES * 4) // 32-bit par échantillon
+  #define I2S_CHUNK_SIZE  256         // Taille d'un chunk en frames
+  #define TOLERANCE_HZ    10.0f       // ±50 Hz tolerance (10% de 500Hz)
 
-////////////////////////////////////////////////////////////////////////////////
-// FACTORY TEST
-////////////////////////////////////////////////////////////////////////////////
-// Pour factory test via FFT et beep :
-// FFT in-place sur 1024 échantillons (canal unique)
+  ////////////////////////////////////////////////////////////////////////////////
+  // FACTORY TEST
+  ////////////////////////////////////////////////////////////////////////////////
+  // Pour factory test via FFT et beep :
+  // FFT in-place sur 1024 échantillons (canal unique)
 
-static void fft1024(float* real, float* imag) {
+  static void fft1024(float* real, float* imag) {
   const int N = 1024;
   // Réordonnancement par inversion de bits
   int j = 0;
@@ -539,7 +544,7 @@ static void fft1024(float* real, float* imag) {
     int m = N >> 1;
     while (m && (j >= m)) {
       j -= m;
-      m >>= 1;  
+      m >>= 1;
     }
     j += m;
   }
@@ -565,27 +570,27 @@ static void fft1024(float* real, float* imag) {
       }
     }
   }
-}
+  }
 
-// Initialise l'I2S en mode full-duplex (stéréo) sur I2S_NUM_0
-static void i2sInitFullDuplex() {
+  // Initialise l'I2S en mode full-duplex (stéréo) sur I2S_NUM_0
+  static void i2sInitFullDuplex() {
   i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_SDOUT, I2S_SDIN, I2S_MCLK);
   if (!i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
     Serial.println("Failed to initialize I2S!");
     while (1); // do nothing
   }
-}
+  }
 
-// Génère un bip de 500 Hz sur le canal choisi et enregistre depuis le micro (canal gauche)
-// beepOnLeft = true => bip sur canal gauche, false => bip sur canal droit
-void loopBeepAndRecord(bool beepOnLeft, uint8_t* micBuffer) {
+  // Génère un bip de 500 Hz sur le canal choisi et enregistre depuis le micro (canal gauche)
+  // beepOnLeft = true => bip sur canal gauche, false => bip sur canal droit
+  void loopBeepAndRecord(bool beepOnLeft, uint8_t* micBuffer) {
   double phaseIncrement = (2.0 * M_PI * BEEP_FREQ) / SAMPLE_RATE;
   double phase = 0.0;
   int32_t txChunk[2 * I2S_CHUNK_SIZE];
   int32_t rxChunk[2 * I2S_CHUNK_SIZE];
- 
+
   int samplesCaptured = 0;
-  
+
   while (samplesCaptured < TOTAL_SAMPLES) {
     // Génère un chunk de données stéréo
     for (int i = 0; i < I2S_CHUNK_SIZE; i++) {
@@ -612,11 +617,11 @@ void loopBeepAndRecord(bool beepOnLeft, uint8_t* micBuffer) {
       if (samplesCaptured >= TOTAL_SAMPLES) break;
     }
   }
- // i2s.end();
-}
+  // i2s.end();
+  }
 
-// Analyse FFT sur 1024 échantillons extraits de micBuffer et vérifie que le pic est autour de 500 Hz ± TOLERANCE_HZ.
-bool analyzeFFT(const uint8_t* micBuffer) {
+  // Analyse FFT sur 1024 échantillons extraits de micBuffer et vérifie que le pic est autour de 500 Hz ± TOLERANCE_HZ.
+  bool analyzeFFT(const uint8_t* micBuffer) {
   int startSample = TOTAL_SAMPLES / 2 - 512;
   if (startSample < 0) startSample = 0;
   float* vReal = (float*) heap_caps_malloc(1024 * sizeof(float), MALLOC_CAP_SPIRAM);
@@ -656,10 +661,10 @@ bool analyzeFFT(const uint8_t* micBuffer) {
   bool pass = (freq >= 500.0 - TOLERANCE_HZ && freq <= 500.0 + TOLERANCE_HZ);
   Serial.printf("Test => %s\n", pass ? "PASS" : "FAIL");
   return pass;
-}
+  }
 
-// Clignote le NeoPixel en bleu un certain nombre de fois
-static void blinkBlue(int times) {
+  // Clignote le NeoPixel en bleu un certain nombre de fois
+  static void blinkBlue(int times) {
   for (int i = 0; i < times; i++) {
     pixels.setPixelColor(0, pixels.Color(0, 0, 255));
     pixels.show();
@@ -668,14 +673,14 @@ static void blinkBlue(int times) {
     pixels.show();
     delay(300);
   }
-}
+  }
 
-// La fonction factoryTest() lancée si les 3 boutons sont enfoncés au démarrage.
-void factoryTest() {
+  // La fonction factoryTest() lancée si les 3 boutons sont enfoncés au démarrage.
+  void factoryTest() {
   Serial.println("=== MODE FACTORY TEST ===");
 
   // Réinitialise l'I2S en mode full-duplex pour test
-  
+
   i2sInitFullDuplex();
   delay(1000);
   // Allume le NeoPixel en blanc pour indiquer que le test est lancé
@@ -766,13 +771,13 @@ void factoryTest() {
     pixels.setPixelColor(0, pixels.Color(128,0,128));
   }
   pixels.show();
-  
- // blinkBlue(3);
+
+  // blinkBlue(3);
   Serial.println("=== Factory Test terminé ===");
   // On peut ensuite arrêter ici pour ne pas lancer le reste du code.
   delay(5000);
   esp_restart();
-}
+  }
 
 */
 //////////////////////////////////////////////////////////////////////////////////////////////
