@@ -1,3 +1,7 @@
+use /LuxeBT
+
+Load Little FS /data directory
+
 ESP32 v3.3.1
 
 
